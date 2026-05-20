@@ -175,12 +175,7 @@
       "id": "br1_b1",
       "type": "button",
       "text": "1 - Гайд легализации бездействия🩶",
-      "rightBlockId": "br1_wait1"
-    },
-    "br1_wait1": {
-      "id": "br1_wait1",
-      "type": "wait_button",
-      "nextBlockId": "br1_txt1"
+      "rightBlockId": "br1_txt1"
     },
     "br1_txt1": {
       "id": "br1_txt1",
@@ -260,12 +255,7 @@
       "id": "br3_b1",
       "type": "button",
       "text": "«Квадрат Дыхания»  аудио",
-      "rightBlockId": "br3_wait1"
-    },
-    "br3_wait1": {
-      "id": "br3_wait1",
-      "type": "wait_button",
-      "nextBlockId": "br3_info"
+      "rightBlockId": "br3_info"
     },
     "br3_info": {
       "id": "br3_info",
@@ -314,19 +304,14 @@
       "id": "br4_b1",
       "type": "button",
       "text": "1 - Маркер  Тревоги",
-      "rightBlockId": "br4_marker_wait",
+      "rightBlockId": "br4_marker_info",
       "nextBlockId": "br4_b2"
     },
     "br4_b2": {
       "id": "br4_b2",
       "type": "button",
       "text": "2 - Фразы Поддержка",
-      "rightBlockId": "br4_phrases_wait"
-    },
-    "br4_marker_wait": {
-      "id": "br4_marker_wait",
-      "type": "wait_button",
-      "nextBlockId": "br4_marker_info"
+      "rightBlockId": "br4_phrases_info"
     },
     "br4_marker_info": {
       "id": "br4_marker_info",
@@ -358,11 +343,6 @@
       "type": "button",
       "text": "Вернуться в меню",
       "rightBlockId": "menu_return_msg"
-    },
-    "br4_phrases_wait": {
-      "id": "br4_phrases_wait",
-      "type": "wait_button",
-      "nextBlockId": "br4_phrases_info"
     },
     "br4_phrases_info": {
       "id": "br4_phrases_info",
@@ -405,19 +385,14 @@
       "id": "br5_b1",
       "type": "button",
       "text": "7 дней к себе",
-      "rightBlockId": "br5_7d_wait",
+      "rightBlockId": "br5_7d_info",
       "nextBlockId": "br5_b2"
     },
     "br5_b2": {
       "id": "br5_b2",
       "type": "button",
       "text": "14 дней к себе",
-      "rightBlockId": "br5_14d_wait"
-    },
-    "br5_7d_wait": {
-      "id": "br5_7d_wait",
-      "type": "wait_button",
-      "nextBlockId": "br5_7d_info"
+      "rightBlockId": "br5_14d_info"
     },
     "br5_7d_info": {
       "id": "br5_7d_info",
@@ -455,11 +430,6 @@
       "type": "button",
       "text": "Вернуться в меню",
       "rightBlockId": "menu_return_msg"
-    },
-    "br5_14d_wait": {
-      "id": "br5_14d_wait",
-      "type": "wait_button",
-      "nextBlockId": "br5_14d_info"
     },
     "br5_14d_info": {
       "id": "br5_14d_info",

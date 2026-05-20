@@ -681,30 +681,27 @@ export class TelegramBotService {
 
           await ctx.answerCallbackQuery();
 
-          // Поиск блока продолжения (Wait Button) после группы кнопок
-          let waitBlockId: string | null = null;
           if (btn.rightBlockId) {
-            waitBlockId = btn.rightBlockId;
+            // Если кнопка имеет связь ВПРАВО — идем по этой ветви немедленно.
+            await this.executeBlock(ctx, btn.rightBlockId, userId);
           } else {
-            // Если нет линка вправо, ищем wait_button за концом группы кнопок
+            // Если связи вправо нет, ищем блок ожидания (wait_button) в конце вертикальной группы кнопок.
             let currentInGroup: ScenarioBlock = btn;
             while (currentInGroup.nextBlockId && config.blocks[currentInGroup.nextBlockId]?.type === "button") {
               currentInGroup = config.blocks[currentInGroup.nextBlockId];
             }
-            if (currentInGroup.nextBlockId && config.blocks[currentInGroup.nextBlockId]?.type === "wait_button") {
-              waitBlockId = currentInGroup.nextBlockId;
-            }
-          }
-
-          if (waitBlockId) {
-            if (!session.triggeredWaitBlocks) {
-              session.triggeredWaitBlocks = [];
-            }
-            if (!session.triggeredWaitBlocks.includes(waitBlockId)) {
-              const updatedWait = [...session.triggeredWaitBlocks, waitBlockId];
-              sessionManager.updateSession(userId, { triggeredWaitBlocks: updatedWait });
-              // Кнопка имеет связь вправо ИЛИ за группой стоит wait_button — переходим дальше!
-              await this.executeBlock(ctx, waitBlockId, userId);
+            
+            const waitBlockId = currentInGroup.nextBlockId;
+            if (waitBlockId && config.blocks[waitBlockId]?.type === "wait_button") {
+              if (!session.triggeredWaitBlocks) {
+                session.triggeredWaitBlocks = [];
+              }
+              if (!session.triggeredWaitBlocks.includes(waitBlockId)) {
+                const updatedWait = [...session.triggeredWaitBlocks, waitBlockId];
+                sessionManager.updateSession(userId, { triggeredWaitBlocks: updatedWait });
+                // Выполняем переход к блоку ПОД кнопками
+                await this.executeBlock(ctx, waitBlockId, userId);
+              }
             }
           }
         }
