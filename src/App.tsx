@@ -1161,169 +1161,88 @@ export default function App() {
                 </div>
 
                 {/* Основная рабочая сетка */}
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <div className="flex-1 mt-4 relative h-[75vh]">
                   
-                  {/* Левая боковая панель: Вкладки меню */}
-                  <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
-                    <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wide">Главное меню бота</h3>
-                      <button 
-                        onClick={() => setAddingMenuBtn(!addingMenuBtn)}
-                        className="text-slate-400 hover:text-emerald-600 transition-colors"
-                      >
-                        <Plus className="h-4 w-4" />
+                  {/* Рабочая область: Miro-доска */}
+                  <div className="w-full h-full border border-slate-200 rounded-xl overflow-hidden shadow-xs relative bg-slate-50">
+                    
+                    {/* Кнопки сброса масштаба */}
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex bg-white/90 backdrop-blur border border-slate-200 shadow-md rounded-xl overflow-hidden p-1 space-x-1">
+                      <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"><Minus className="h-4 w-4" /></button>
+                      <div className="flex items-center px-2 min-w-[60px] justify-center text-xs font-bold text-slate-600">
+                        {Math.round(zoom * 100)}%
+                      </div>
+                      <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"><Plus className="h-4 w-4" /></button>
+                      <div className="w-[1px] h-5 bg-slate-200 self-center mx-1" />
+                      <button onClick={() => { setZoom(1); setPan({x:0, y:0}); }} className="px-3 flex items-center space-x-1.5 text-xs font-bold text-slate-600 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-colors">
+                        <Focus className="h-3.5 w-3.5" />
+                        <span>СБРОС ВИДА</span>
                       </button>
                     </div>
 
-                    {/* Поле добавления новой инлайн кнопки меню */}
-                    {addingMenuBtn && (
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/60 text-xs space-y-2">
-                        <input
-                          type="text"
-                          placeholder="Название кнопки меню..."
-                          value={newMenuBtnText}
-                          onChange={(e) => setNewMenuBtnText(e.target.value)}
-                          className="w-full px-2 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-400 focus:outline-none"
-                        />
-                        <div className="flex justify-end space-x-1">
-                          <button
-                            onClick={() => setAddingMenuBtn(false)}
-                            className="px-2 py-1 border border-slate-200 text-slate-600 rounded bg-white"
-                          >
-                            Отмена
-                          </button>
-                          <button
-                            onClick={handleAddMenuButton}
-                            className="px-2 py-1 bg-emerald-600 text-white font-bold rounded hover:bg-emerald-700 transition-colors"
-                          >
-                            Создать
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    {/* Список карточек в формате Miro-доски */}
+                    {(() => {
+                      const coords: Record<string, { row: number; col: number }> = {};
+                      const visited = new Set<string>();
+                      
+                      // Находим корневые элементы (на которые никто не ссылается)
+                      const inDegree: Record<string, number> = {};
+                      Object.keys(scenario.blocks).forEach(id => inDegree[id] = 0);
+                      
+                      Object.values(scenario.blocks).forEach(b => {
+                        if (b.nextBlockId) inDegree[b.nextBlockId] = (inDegree[b.nextBlockId] || 0) + 1;
+                        if (b.rightBlockId) inDegree[b.rightBlockId] = (inDegree[b.rightBlockId] || 0) + 1;
+                      });
 
-                    <div className="space-y-1.5">
-                      {scenario.menu.map((btn) => {
-                        const isSel = btn.id === selectedMenuId;
-                        return (
-                          <div 
-                            key={btn.id}
-                            className={`flex justify-between items-center group px-3 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                              isSel ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "hover:bg-slate-50 text-slate-600"
-                            }`}
-                            onClick={() => setSelectedMenuId(btn.id)}
-                          >
-                            <span className="truncate max-w-[150px]">{btn.text}</span>
-                            
-                            {/* Удалить кнопку меню */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteMenuButton(btn.id);
-                              }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-rose-600 bg-transparent border-none cursor-pointer"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                      let currentRow = 0;
 
-                  {/* Правая рабочая область: Miro-доска */}
-                  <div className="lg:col-span-3 space-y-4">
-                    {selectedMenuId && selectedMenuBtn ? (
-                      <div>
+                      // Рекурсивный автоматический расчет сетки связей 2D
+                      function place(id: string | null | undefined, r: number, c: number) {
+                        if (!id || !scenario || visited.has(id)) return;
+                        visited.add(id);
+
+                        let finalR = r;
+                        let finalC = c;
                         
-                        {/* Изменение названия вкладки меню */}
-                        <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs mb-4 flex justify-between items-center">
-                          <div className="flex-1 max-w-sm">
-                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Редактируемый раздел меню:</label>
-                            <input
-                              type="text"
-                              value={selectedMenuBtn.text}
-                              onChange={(e) => {
-                                const updated = scenario.menu.map((b) => 
-                                  b.id === selectedMenuId ? { ...b, text: e.target.value } : b
-                                );
-                                updateScenarioState({ ...scenario, menu: updated });
-                              }}
-                              className="w-full font-bold text-md text-slate-800 border-none px-0 py-0 focus:ring-0 focus:outline-none focus:border-none focus-visible:outline-none"
-                            />
-                          </div>
-                          
-                          <div className="text-[11px] text-slate-400 font-medium">
-                            Для этого раздела запущено прохождение сценария
-                          </div>
-                        </div>
+                        // Защита от наложения карточек друг на друга: если ячейка занята, сдвигаем правее
+                        while (Object.values(coords).some(p => p.row === finalR && p.col === finalC)) {
+                          finalC += 1;
+                        }
 
-                        {/* Список карточек в формате Miro-доски */}
-                        {(() => {
-                          const coords: Record<string, { row: number; col: number }> = {};
-                          const visited = new Set<string>();
-                          
-                          // Находим корневые элементы (на которые никто не ссылается)
-                          const inDegree: Record<string, number> = {};
-                          Object.keys(scenario.blocks).forEach(id => inDegree[id] = 0);
-                          
-                          Object.values(scenario.blocks).forEach(b => {
-                            if (b.nextBlockId) inDegree[b.nextBlockId] = (inDegree[b.nextBlockId] || 0) + 1;
-                            if (b.rightBlockId) inDegree[b.rightBlockId] = (inDegree[b.rightBlockId] || 0) + 1;
-                          });
+                        coords[id] = { row: finalR, col: finalC };
 
-                          let currentRow = 0;
-
-                          // Рекурсивный автоматический расчет сетки связей 2D
-                          function place(id: string | null | undefined, r: number, c: number) {
-                            if (!id || !scenario || visited.has(id)) return;
-                            visited.add(id);
-
-                            let finalR = r;
-                            let finalC = c;
-                            
-                            // Защита от наложения карточек друг на друга: если ячейка занята, сдвигаем правее
-                            while (Object.values(coords).some(p => p.row === finalR && p.col === finalC)) {
-                              finalC += 1;
-                            }
-
-                            coords[id] = { row: finalR, col: finalC };
-
-                            const b = scenario.blocks[id];
-                            if (b) {
-                              // Сначала ответвления выбора (вправо)
-                              if (b.rightBlockId) {
-                                place(b.rightBlockId, finalR, finalC + 1);
-                              }
-                              // Затем последующая цепочка диалога (вниз)
-                              if (b.nextBlockId) {
-                                place(b.nextBlockId, Math.max(finalR + 1, currentRow + 1), finalC);
-                              }
-                            }
-                            
-                            if (finalR > currentRow) {
-                              currentRow = finalR;
-                            }
+                        const b = scenario.blocks[id];
+                        if (b) {
+                          // Сначала ответвления выбора (вправо)
+                          if (b.rightBlockId) {
+                            place(b.rightBlockId, finalR, finalC + 1);
                           }
+                          // Затем последующая цепочка диалога (вниз)
+                          if (b.nextBlockId) {
+                            place(b.nextBlockId, Math.max(finalR + 1, currentRow + 1), finalC);
+                          }
+                        }
+                        
+                        if (finalR > currentRow) {
+                          currentRow = finalR;
+                        }
+                      }
 
-                          // 1. Сначала размещаем все "стартовые" блоки, выбранные в меню (чтобы они были наверху)
-                          const menuStartIds = scenario.menu.map(m => m.startBlockId).filter(Boolean) as string[];
-                          let rootRowOffset = 0;
-                          
-                          menuStartIds.forEach(id => {
-                            if (!visited.has(id)) {
-                              place(id, rootRowOffset, 0);
-                              rootRowOffset = currentRow + 2;
-                            }
-                          });
+                      // 1. Сначала размещаем стартовый блок
+                      let rootRowOffset = 0;
+                      
+                      if (scenario.startBlockId && !visited.has(scenario.startBlockId)) {
+                        place(scenario.startBlockId, rootRowOffset, 0);
+                        rootRowOffset = currentRow + 2;
+                      }
 
-                          // 2. Затем размещаем остальные корневые блоки
-                          Object.keys(inDegree).forEach(id => {
-                            if (inDegree[id] === 0 && !visited.has(id)) {
-                              place(id, rootRowOffset, 0);
-                              rootRowOffset = currentRow + 2;
-                            }
-                          });
+                      // 2. Затем размещаем остальные корневые блоки
+                      Object.keys(inDegree).forEach(id => {
+                        if (inDegree[id] === 0 && !visited.has(id)) {
+                          place(id, rootRowOffset, 0);
+                          rootRowOffset = currentRow + 2;
+                        }
+                      });
 
                           // 3. Выстраиваем оставшиеся потерянные («сиротские») блоки в крайний правый столбец
                           let maxCol = 0;
@@ -1347,11 +1266,11 @@ export default function App() {
                           const rowHeight = 220;
 
                           return (
-                            <div className="flex flex-col lg:flex-row gap-5 items-stretch h-[660px]">
+                            <div className="flex flex-col lg:flex-row gap-5 items-stretch h-[660px] w-full">
                               
                               {/* ЗАБОР КАНВАСА РИСОВАНИЯ */}
                               <div 
-                                className="flex-1 min-h-[400px] lg:h-full bg-slate-50 relative overflow-hidden border border-slate-200 rounded-2xl select-none"
+                                className="flex-1 bg-slate-50 relative overflow-hidden border border-slate-200 rounded-2xl select-none"
                                 style={{ cursor: isDraggingCanvas ? 'grabbing' : 'grab' }}
                                 onMouseDown={handleCanvasMouseDown}
                                 onMouseMove={handleCanvasMouseMove}
@@ -1386,26 +1305,10 @@ export default function App() {
                                   {/* Слой SVG соединений */}
                                   <svg className="absolute inset-0 pointer-events-none overflow-visible w-full h-full">
                                     <defs>
-                                      <marker
-                                        id="arrow-next"
-                                        viewBox="0 0 10 10"
-                                        refX="8"
-                                        refY="5"
-                                        markerWidth="6"
-                                        markerHeight="6"
-                                        orient="auto"
-                                      >
+                                      <marker id="arrow-next" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
                                         <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
                                       </marker>
-                                      <marker
-                                        id="arrow-right"
-                                        viewBox="0 0 10 10"
-                                        refX="8"
-                                        refY="5"
-                                        markerWidth="6"
-                                        markerHeight="6"
-                                        orient="auto"
-                                      >
+                                      <marker id="arrow-right" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
                                         <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" />
                                       </marker>
                                     </defs>
@@ -1904,14 +1807,7 @@ export default function App() {
                         })()}
 
                       </div>
-                    ) : (
-                      <div className="p-12 text-center bg-white border border-slate-200 rounded-xl">
-                        Создайте или выберите вкладку главного меню слева.
-                      </div>
-                    )}
-                  </div>
-
-                </div>
+                    </div>
 
               </div>
             )}

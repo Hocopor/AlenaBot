@@ -285,7 +285,7 @@ export class TelegramBotService {
           if (block.url) {
             try {
               if (block.url.startsWith("http://") || block.url.startsWith("https://")) {
-                await ctx.replyWithDocument(block.url, { caption: block.text || "" });
+                await ctx.replyWithDocument(block.url);
               } else {
                 let localPath = block.url;
                 if (localPath.startsWith("/")) {
@@ -293,7 +293,7 @@ export class TelegramBotService {
                 }
                 const fullPath = path.join(process.cwd(), localPath);
                 if (fs.existsSync(fullPath)) {
-                  await ctx.replyWithDocument(new InputFile(fullPath), { caption: block.text || "" });
+                  await ctx.replyWithDocument(new InputFile(fullPath));
                 } else {
                   await ctx.reply(`[Файл не найден на сервере: ${block.url}]`);
                 }
@@ -314,7 +314,7 @@ export class TelegramBotService {
           if (block.url) {
             try {
               if (block.url.startsWith("http://") || block.url.startsWith("https://")) {
-                await ctx.replyWithAudio(block.url, { caption: block.text || "" });
+                await ctx.replyWithAudio(block.url);
               } else {
                 let localPath = block.url;
                 if (localPath.startsWith("/")) {
@@ -322,7 +322,7 @@ export class TelegramBotService {
                 }
                 const fullPath = path.join(process.cwd(), localPath);
                 if (fs.existsSync(fullPath)) {
-                  await ctx.replyWithAudio(new InputFile(fullPath), { caption: block.text || "" });
+                  await ctx.replyWithAudio(new InputFile(fullPath));
                 } else {
                   await ctx.reply(`[Аудиофайл не найден на сервере: ${block.url}]`);
                 }
