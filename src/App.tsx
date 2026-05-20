@@ -63,13 +63,18 @@ interface BotStatus {
 
 interface ScenarioBlock {
   id: string;
-  type: "text" | "button" | "link" | "back" | "menu" | "pause" | "wait_button" | "file" | "audio";
+  type: "text" | "button" | "link" | "back" | "menu" | "pause" | "wait_button" | "file" | "audio" | "menu_return";
   text?: string;
   url?: string;
   seconds?: number;
   isOnce?: boolean;
   nextBlockId?: string | null;
   rightBlockId?: string | null;
+}
+
+interface MenuReturnSettings {
+  text: string;
+  buttonBlockIds: string[];
 }
 
 interface ScenarioMenuButton {
@@ -84,6 +89,7 @@ interface ScenarioConfig {
   startBlockId?: string;
   menu: ScenarioMenuButton[];
   blocks: Record<string, ScenarioBlock>;
+  menuReturnSettings?: MenuReturnSettings;
 }
 
 interface ScenarioError {
@@ -1518,6 +1524,7 @@ export default function App() {
                                           block.type === 'pause' ? 'bg-purple-50 border-purple-100 text-purple-700 font-bold' :
                                           block.type === 'back' ? 'bg-amber-50 border-amber-100 text-amber-800' :
                                           block.type === 'menu' ? 'bg-emerald-50 border-emerald-100 text-emerald-800' :
+                                          block.type === 'menu_return' ? 'bg-emerald-100 border-emerald-200 text-emerald-900 font-black' :
                                           block.type === 'file' ? 'bg-teal-50 border-teal-100 text-teal-850 font-bold' :
                                           block.type === 'audio' ? 'bg-indigo-50 border-indigo-100 text-indigo-850 font-bold' :
                                           'bg-rose-50 border-rose-100 text-rose-800'
@@ -1530,6 +1537,7 @@ export default function App() {
                                               {block.type === 'pause' && "⏳"}
                                               {block.type === 'back' && "↩️"}
                                               {block.type === 'menu' && "🏠"}
+                                              {block.type === 'menu_return' && "🔄"}
                                               {block.type === 'wait_button' && "🚦"}
                                               {block.type === 'file' && "📁"}
                                               {block.type === 'audio' && "🎵"}
@@ -1541,6 +1549,7 @@ export default function App() {
                                               {block.type === 'pause' && "Задержка"}
                                               {block.type === 'back' && "Кнопка Назад"}
                                               {block.type === 'menu' && "Главное меню"}
+                                              {block.type === 'menu_return' && "Настр. Меню"}
                                               {block.type === 'wait_button' && "Ожидание действия"}
                                               {block.type === 'file' && "Файл документ"}
                                               {block.type === 'audio' && "Аудиофайл"}
@@ -1589,16 +1598,18 @@ export default function App() {
 
                                         {/* ИНТЕРАКТИВНЫЕ ПЛЮСИКИ ДОБАВЛЕНИЯ КАРТОЧЕК */}
                                         {/* Плюс вниз (relation: next) */}
-                                        <button
-                                          className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center border border-white shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-all z-25"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setActiveAddPopover({ blockId: id, relation: "next" });
-                                          }}
-                                          title="Вставить следующее действие по цепочке ниже"
-                                        >
-                                          <Plus className="h-3 w-3" />
-                                        </button>
+                                        {block.type !== 'menu_return' && block.type !== 'menu' && block.type !== 'back' && (
+                                          <button
+                                            className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center border border-white shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-all z-25"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setActiveAddPopover({ blockId: id, relation: "next" });
+                                            }}
+                                            title="Вставить следующее действие по цепочке ниже"
+                                          >
+                                            <Plus className="h-3 w-3" />
+                                          </button>
+                                        )}
 
                                         {/* Кнопки перемещения вверх/вниз для цепочки */}
                                         {isSelected && (
@@ -1716,15 +1727,16 @@ export default function App() {
                                           <option value="pause">⏳ Пауза (задержка)</option>
                                           <option value="back">↩️ Кнопка «Назад»</option>
                                           <option value="menu">🏠 Кнопка «В меню»</option>
+                                          <option value="menu_return">🔄 Настр. «Вернуться в меню»</option>
                                           <option value="wait_button">🚦 Ожидание клика</option>
                                         </select>
                                       </div>
 
                                       {/* 2. Текст сообщения / кнопка */}
-                                      {(activeBlock.type === "text" || activeBlock.type === "button" || activeBlock.type === "link" || activeBlock.type === "back" || activeBlock.type === "menu") && (
+                                      {(activeBlock.type === "text" || activeBlock.type === "button" || activeBlock.type === "link" || activeBlock.type === "back" || activeBlock.type === "menu" || activeBlock.type === "menu_return") && (
                                         <div>
                                           <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                                            {activeBlock.type === "button" ? "Текст кнопки выбора" : "Отправляемый текст сообщения"}
+                                            {activeBlock.type === "button" ? "Текст кнопки выбора" : (activeBlock.type === "menu_return" ? "Название кнопки" : "Отправляемый текст сообщения")}
                                           </label>
                                           {activeBlock.type === "text" ? (
                                             <textarea
@@ -1739,10 +1751,89 @@ export default function App() {
                                               type="text"
                                               value={activeBlock.text || ""}
                                               onChange={(e) => handleUpdateBlockField(activeBlock.id, { text: e.target.value })}
-                                              placeholder="Текст на кнопке"
+                                              placeholder={activeBlock.type === "menu_return" ? "Вернуться в меню" : "Текст на кнопке"}
                                               className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-700 font-bold"
                                             />
                                           )}
+                                        </div>
+                                      )}
+
+                                      {/* 2.6 Глобальные настройки кнопки Вернуться в меню (singleton) */}
+                                      {activeBlock.type === "menu_return" && scenario.menuReturnSettings && (
+                                        <div className="space-y-3 bg-emerald-50/50 p-3 rounded-xl border border-emerald-100">
+                                          <h5 className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">Общие настройки возврата:</h5>
+                                          <div>
+                                            <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1">Текст сообщения при возврате:</label>
+                                            <input 
+                                              type="text"
+                                              value={scenario.menuReturnSettings.text}
+                                              onChange={(e) => updateScenarioState({
+                                                ...scenario,
+                                                menuReturnSettings: {
+                                                  ...scenario.menuReturnSettings!,
+                                                  text: e.target.value
+                                                }
+                                              })}
+                                              className="w-full text-xs px-2 py-1.5 border border-emerald-200 rounded bg-white text-slate-700 font-medium"
+                                            />
+                                          </div>
+                                          <div>
+                                            <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1">ID блоков для кнопок меню:</label>
+                                            <div className="space-y-1.5">
+                                              {scenario.menuReturnSettings.buttonBlockIds.map((idVal, idx) => (
+                                                <div key={idx} className="flex items-center space-x-1">
+                                                  <input 
+                                                    type="text"
+                                                    value={idVal}
+                                                    onChange={(e) => {
+                                                      const newIds = [...scenario.menuReturnSettings!.buttonBlockIds];
+                                                      newIds[idx] = e.target.value;
+                                                      updateScenarioState({
+                                                        ...scenario,
+                                                        menuReturnSettings: {
+                                                          ...scenario.menuReturnSettings!,
+                                                          buttonBlockIds: newIds
+                                                        }
+                                                      });
+                                                    }}
+                                                    placeholder="wb_q3_b1"
+                                                    className="flex-1 text-[10px] px-2 py-1 border border-emerald-200 rounded bg-white font-mono"
+                                                  />
+                                                  <button 
+                                                    onClick={() => {
+                                                      const newIds = scenario.menuReturnSettings!.buttonBlockIds.filter((_, i) => i !== idx);
+                                                      updateScenarioState({
+                                                        ...scenario,
+                                                        menuReturnSettings: {
+                                                          ...scenario.menuReturnSettings!,
+                                                          buttonBlockIds: newIds
+                                                        }
+                                                      });
+                                                    }}
+                                                    className="p-1 text-rose-500 hover:bg-rose-50 rounded"
+                                                  >
+                                                    <Trash2 className="w-3 h-3" />
+                                                  </button>
+                                                </div>
+                                              ))}
+                                              <button 
+                                                onClick={() => {
+                                                  updateScenarioState({
+                                                    ...scenario,
+                                                    menuReturnSettings: {
+                                                      ...scenario.menuReturnSettings!,
+                                                      buttonBlockIds: [...scenario.menuReturnSettings!.buttonBlockIds, ""]
+                                                    }
+                                                  });
+                                                }}
+                                                className="w-full py-1 border border-dashed border-emerald-300 rounded text-[10px] font-bold text-emerald-600 hover:bg-emerald-100 flex items-center justify-center space-x-1"
+                                              >
+                                                <Plus className="w-3 h-3" />
+                                                <span>Добавить кнопку</span>
+                                              </button>
+                                            </div>
+                                            <p className="text-[8px] text-emerald-600 mt-2 italic">* Изменения применятся ко ВСЕМ кнопкам этого типа</p>
+                                          </div>
                                         </div>
                                       )}
 
@@ -2326,6 +2417,14 @@ WantedBy=multi-user.target`}
               >
                 <span>🏠</span>
                 <span>Системная «Вернуться в меню»</span>
+              </button>
+
+              <button 
+                onClick={() => handleAddBlock(activeAddPopover.blockId, activeAddPopover.relation, "menu_return")}
+                className="flex items-center space-x-2.5 p-2 bg-slate-50 hover:bg-emerald-100 text-slate-700 hover:text-emerald-800 font-bold rounded-lg transition-colors border border-slate-200"
+              >
+                <span>🔄</span>
+                <span>Настраиваемая «Вернуться в меню»</span>
               </button>
 
               <button 

@@ -375,10 +375,11 @@ export class TelegramBotService {
           break;
         }
         case "menu": {
-          const configLink = config.contactLink || "https://t.me/ibanezebi64";
-          await ctx.reply(botConfig.texts.backToMenuHeader, {
-            reply_markup: this.makeMainMenuKeyboard()
-          });
+          await this.handleReturnToMenu(ctx);
+          break;
+        }
+        case "menu_return": {
+          await this.handleReturnToMenu(ctx);
           break;
         }
         case "back": {
@@ -781,11 +782,41 @@ export class TelegramBotService {
     if (!userId) return;
 
     const session = sessionManager.getSession(userId);
+    const config = scenarioManager.loadConfig();
 
     if (session.menuUnlocked) {
-      await ctx.reply(botConfig.texts.backToMenuHeader, {
-        reply_markup: this.makeMainMenuKeyboard()
-      });
+      if (config.menuReturnSettings) {
+        const text = config.menuReturnSettings.text || botConfig.texts.backToMenuHeader;
+        const btnBlockIds = config.menuReturnSettings.buttonBlockIds || [];
+        
+        const keyboard = new InlineKeyboard();
+        btnBlockIds.forEach((id) => {
+          const rawId = id.replace(/^id:\s*/i, "").trim();
+          const block = config.blocks[rawId];
+          if (block && (block.type === "button" || block.type === "link")) {
+            if (block.url) {
+              keyboard.url(block.text || "Ссылка", block.url).row();
+            } else {
+              keyboard.text(block.text || "Кнопка", `blk_btn_${block.id}`).row();
+            }
+          }
+        });
+
+        // Если кнопок нет (или не найдены), показываем дефолтное главное меню
+        if (keyboard.inline_keyboard.length === 0) {
+          await ctx.reply(text, {
+            reply_markup: this.makeMainMenuKeyboard()
+          });
+        } else {
+          await ctx.reply(text, {
+            reply_markup: keyboard
+          });
+        }
+      } else {
+        await ctx.reply(botConfig.texts.backToMenuHeader, {
+          reply_markup: this.makeMainMenuKeyboard()
+        });
+      }
     } else {
       // Меню еще не разблокировано (пользователь не заполнил опрос)
       await this.sendPromoWelcome(ctx);
