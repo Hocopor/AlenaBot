@@ -274,11 +274,8 @@ export default function App() {
             <Bot className="h-10 w-10 text-emerald-600" />
           </div>
           <h2 className="text-3xl font-bold tracking-tight text-slate-900">
-            Вход в панель управления
+            Вход
           </h2>
-          <p className="mt-2 text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
-            Авторизуйтесь, чтобы управлять Telegram-ботом <strong className="text-slate-800">СоПутница Алёна</strong>, отслеживать сессии клиентов и просматривать логи сервера.
-          </p>
         </div>
 
         <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
@@ -286,33 +283,28 @@ export default function App() {
             <form className="space-y-6" onSubmit={handleLogin}>
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
-                  Имя пользователя (Логин)
+                  Логин
                 </label>
                 <input
                   type="text"
                   required
                   value={usernameInput}
                   onChange={(e) => setUsernameInput(e.target.value)}
-                  placeholder="Например, admin"
                   className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-400 focus:outline-none transition-all"
                 />
               </div>
 
               <div>
                 <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
-                  Защитный пароль
+                  Пароль
                 </label>
                 <input
                   type="password"
                   required
                   value={passwordInput}
                   onChange={(e) => setPasswordInput(e.target.value)}
-                  placeholder="Ваш пароль администратора"
                   className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-400 focus:outline-none transition-all"
                 />
-                <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
-                  Если вы не задавали или не хэшировали пароль в <code>.env</code>, сервер сгенерировал случайный временный токен в консоли Docker/Ubuntu. Проверьте логи Docker или systemd.
-                </p>
               </div>
 
               {loginError && (
@@ -330,17 +322,11 @@ export default function App() {
                   {loggingIn ? (
                     <RefreshCw className="h-4 w-4 animate-spin" />
                   ) : (
-                    "Войти в консоль"
+                    "Войти"
                   )}
                 </button>
               </div>
             </form>
-          </div>
-          
-          <div className="mt-6 text-center">
-            <span className="text-[10px] font-mono select-none px-3 py-1 bg-slate-200/50 rounded-full text-slate-500 border border-slate-300/40">
-              SECURE ADMIN MODULE V1.2 (SSL Verified)
-            </span>
           </div>
         </div>
       </div>
