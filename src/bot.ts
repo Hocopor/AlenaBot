@@ -56,6 +56,31 @@ export class TelegramBotService {
       const botInfo = await this.bot.api.getMe();
       this.addLog(`Access verified. Bot username is @${botInfo.username}`);
 
+      // Автоматическая первоначальная настройка описания и команд бота в Telegram
+      try {
+        await this.bot.api.setMyDescription(botConfig.texts.welcomePreStart);
+        this.addLog("Bot welcome description (setMyDescription) registered in Telegram successfully.");
+      } catch (descErr: any) {
+        this.addLog(`Could not register welcome description: ${descErr.message || descErr}`);
+      }
+
+      try {
+        await this.bot.api.setMyShortDescription("Психологический бот Алёны. Помогу мягко распутать то, что внутри копилось. Без завышенных требований.");
+        this.addLog("Bot short description registered in Telegram successfully.");
+      } catch (sDescErr: any) {
+        this.addLog(`Could not register short description: ${sDescErr.message || sDescErr}`);
+      }
+
+      try {
+        await this.bot.api.setMyCommands([
+          { command: "start", description: "Запустить / Перезапустить квест-бота" },
+          { command: "menu", description: "Вернуться в главное меню инструментов" }
+        ]);
+        this.addLog("Bot menu commands registered in Telegram successfully.");
+      } catch (cmdErr: any) {
+        this.addLog(`Could not register menu commands: ${cmdErr.message || cmdErr}`);
+      }
+
       const appUrl = process.env.APP_URL;
       
       if (appUrl && appUrl.startsWith("https")) {
@@ -176,7 +201,7 @@ export class TelegramBotService {
     if (menuUnlocked) {
       kb.text("Вернуться в меню");
     }
-    return kb.resized().placeholder("Выбирайте действия ниже ⬇️");
+    return kb.resized().oneTime();
   }
 
   /**

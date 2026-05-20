@@ -109,69 +109,132 @@ journalctl -u AlenaBot -f -n 50
 
 ---
 
-## 🌐 4. Настройка Caddy для нескольких сайтов, сетей и AmneziaVPN
+## 🌐 4. Настройка Caddy на альтернативный порт (8443) (Совместно с VPN на 443)
 
-Веб-сервер **Caddy** идеально подходит для хостинга нескольких ботов, поддоменов и сайтов. В отличие от Nginx, Caddy автоматически получает, настраивает и продлевает бесплатные SSL-сертификаты от Let's Encrypt / ZeroSSL.
+Из полученных вами логов видно, что порт `80` (HTTP) на вашем сервере занят процессом `nginx`, поэтому Caddy не может запуститься и выдает ошибку:
+`listen tcp :80: bind: address already in use`
 
-### Пример Caddyfile (`/etc/caddy/Caddyfile`)
+Если Nginx не используется для реальных сайтов на этом сервере, **наилучшее и самое простое решение** — отключить его и полностью переключиться на **Caddy**. Это освободит порт `80` для автоматического получения и продления SSL-сертификатов Let's Encrypt!
 
-Если у вас на сервере работает `AmneziaVPN` в докер-контейнере, он обычно слушает свои порты VPN (например, WireGuard/Shadowsocks), а веб-порты `80` и `443` остаются свободными для Caddy. 
+### Шаг 1. Отключение Nginx для освобождения порта 80
+Запустите следующие команды на сервере:
+```bash
+# Останавливаем запущенный Nginx
+sudo systemctl stop nginx
 
-Ниже представлен пример конфигурации Caddyfile для запуска админ-панели Алёны, других ваших сайтов и ботов на одном сервере vm816838:
+# Отключаем автозапуск Nginx при перезагрузке сервера
+sudo systemctl disable nginx
+```
+
+После этого порт `80` станет полностью свободен!
+
+---
+
+### Шаг 2. Настройка Caddyfile с поддержкой порта 8443
+
+Так как порт `443` у вас занят VPN, мы настроим Caddy слушать HTTPS на безопасном порту `8443`. Telegram Webhook официально поддерживает входящие вебхуки на порту `8443`!
+
+Откройте ваш Caddyfile:
+```bash
+sudo nano /etc/caddy/Caddyfile
+```
+
+Замените всё содержимое файла следующим конфигом:
 
 ```caddy
+{
+    # Указываем Caddy использовать порт 8443 для HTTPS
+    # (Порт 80 будет использоваться для HTTP по умолчанию и прохождения SSL вызовов)
+    https_port 8443
+}
+
 # 1. Поддомен для админ-панели и вебхуков Алёны
 alena.yourdomain.ru {
     # Проксируем трафик на порт 3000, где крутится наш Node.js сервер
     reverse_proxy localhost:3000
 
-    # Сжатие трафика для ускорения загрузки
+    # Сжатие трафика для ускорения
     encode gzip zstd
 
-    # Логирование запросов в файл (для отладки)
+    # Логирование запросов в файл (полезно при отладке)
     log {
         output file /var/log/caddy/alena_bot_access.log
     }
 }
-
-# 2. Еще один ваш сайт на этом же сервере
-another-site.ru {
-    # Раздача статических файлов из директории
-    root * /var/www/another-site
-    file_server
-    encode gzip
-}
-
-# 3. Второй бот (если у него есть вебхук-интерфейс на порту 3005)
-bot2.yourdomain.ru {
-    reverse_proxy localhost:3005
-    encode gzip
-}
 ```
-
-### Как применить конфигурацию Caddy:
-1. Установите Caddy на Ubuntu (если он еще не установлен):
-   ```bash
-   sudo apt install -y debian-keyring debian-archive-keyring apt-transport-https
-   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | sudo gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
-   curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | sudo tee /etc/apt/sources.list.d/caddy-stable.list
-   sudo apt update
-   sudo apt install caddy
-   ```
-2. Откройте конфигурационный файл: `nano /etc/caddy/Caddyfile`.
-3. Запишите настройки поддоменов (заменив `yourdomain.ru` на ваш реальный зарегистрированный домен, направленный на IP вашего сервера `vm816838`).
-4. Перезапустите веб-сервер:
-   ```bash
-   systemctl restart caddy
-   ```
-5. Проверьте статус сертификатов SSL:
-   ```bash
-   systemctl status caddy
-   ```
+*(Замените `alena.yourdomain.ru` на ваш реальный поддомен, направленный на IP вашего сервера `vm816838`).*
 
 ---
 
-## 🚀 5. Быстрый скрипт для обновления кода на сервере (CI/CD)
+### Шаг 3. Запуск и применение конфигурации Caddy
+Теперь, когда порт `80` свободен, запустите и перезапустите службу Caddy:
+```bash
+# Перезагружаем конфиг Caddy
+sudo systemctl restart caddy
+
+# Проверяем статус работы Caddy
+sudo systemctl status caddy
+```
+Caddy автоматически:
+1. Займет порт `80` для отправки HTTP-челленджа Let's Encrypt.
+2. Получит бесплатный SSL сертификат для вашего домена `alena.yourdomain.ru`.
+3. Начнет принимать трафик по адресу `https://alena.yourdomain.ru:8443` и проксировать его на внутренний сервис бота (порт `3000`).
+
+---
+
+### Шаг 4. Альтернатива: Настройка Nginx (если Nginx вам всё-таки нужен на порту 80)
+
+Если вы выяснили, что порт 80 на вашем сервере запущен под управлением `nginx`, просто создайте файл конфигурации для бота в Nginx:
+
+```bash
+sudo nano /etc/nginx/sites-available/alena_bot
+```
+
+Вставьте следующую конфигурацию (она будет принимать запросы на стандартном HTTPS порту `443` или альтернативном `8443` и проксировать на бота):
+
+```nginx
+server {
+    listen 8443 ssl;
+    server_name alena.yourdomain.ru;
+
+    # Если сертификаты уже есть (например, сгенерированы Let's Encrypt / Certbot)
+    ssl_certificate /etc/letsencrypt/live/alena.yourdomain.ru/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/alena.yourdomain.ru/privkey.pem;
+
+    location / {
+        proxy_pass http://127.0.0.1:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
+```
+
+Активируйте конфиг и перезапустите Nginx:
+```bash
+sudo ln -s /etc/nginx/sites-available/alena_bot /etc/nginx/sites-enabled/
+sudo nginx -t
+sudo systemctl restart nginx
+```
+
+---
+
+## 🛠️ 5. Открытие портов в фаерволе (UFW)
+Не забудьте разрешить входящий трафик на порту `8443` и `80` на вашем сервере Ubuntu:
+```bash
+sudo ufw allow 8443/tcp
+sudo ufw allow 80/tcp
+sudo ufw reload
+```
+
+---
+
+## 🚀 6. Быстрый скрипт для обновления кода на сервере (CI/CD)
 
 Чтобы обновить бота на сервере после коммита в GitHub, просто зайдите на сервер и выполните эти команды:
 

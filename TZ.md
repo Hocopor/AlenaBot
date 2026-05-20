@@ -226,38 +226,3 @@
    * Токен должен валидироваться перед запуском.
 5. **Файлы**:
    * Сценарий и тексты должны быть вынесены в отдельный конфигурационный/сервисный файл для простоты будущего редактирования ссылок и путей к реальным файлам психологических материалов.
-
-
-nano /etc/systemd/system/AlenaBot.service
-
-[Unit]
-Description=Alena Telegram Bot & Web Admin Panel
-After=network.target
-
-[Service]
-Type=simple
-User=root
-WorkingDirectory=/root/prod/AlenaBot
-ExecStart=/usr/bin/node dist/server.cjs
-
-# Автоматический перезапуск процесса при падении через 5 секунд
-Restart=always
-RestartSec=5
-
-# Системное окружение (Environment)
-# Подставьте ваши реальные API токены и логин/пароль для панели администратора
-Environment=NODE_ENV=production
-Environment=PORT=3000
-Environment=TELEGRAM_BOT_TOKEN="ВАШ_TELEGRAM_БОТ_ТОКЕН"
-
-# Если в проекте используются логин/пароль для входа в веб-панель
-Environment=ADMIN_USERNAME="admin"
-Environment=ADMIN_PASSWORD="ВАШ_СЛОЖНЫЙ_ПАРОЛЬ"
-
-# Лимиты на логи в системном журнале journald
-StandardOutput=syslog
-StandardError=syslog
-SyslogIdentifier=alena-bot
-
-[Install]
-WantedBy=multi-user.target
