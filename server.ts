@@ -61,14 +61,11 @@ async function startServer() {
   // Telegram API отправляет обновления в формате JSON, поэтому нам обязательно нужен парсер
   app.use(express.json());
 
-  // Логгирование входящих HTTP запросов (только ошибки >= 400 и важные изменяющие действия POST/PUT/DELETE)
+  // Логгирование входящих HTTP запросов (только ошибки >= 400)
   app.use((req, res, next) => {
     res.on("finish", () => {
       if (res.statusCode >= 400) {
         console.error(`[HTTP ${res.statusCode}] ${req.method} ${req.path}`);
-      } else if (req.method !== "GET" && req.path !== "/api/telegram-webhook") {
-        // Фиксируем важные управляющие действия (например, авторизация или перезапуск бота)
-        console.log(`[HTTP ${res.statusCode}] ${req.method} ${req.path}`);
       }
     });
     next();

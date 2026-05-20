@@ -150,6 +150,13 @@ export default function App() {
     relation: "next" | "right";
   } | null>(null);
 
+  // Состояния интерактивной Miro-доски
+  const [zoom, setZoom] = useState<number>(0.9);
+  const [pan, setPan] = useState<{ x: number; y: number }>({ x: 40, y: 100 });
+  const [isDraggingCanvas, setIsDraggingCanvas] = useState<boolean>(false);
+  const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+
   // Копирование в буфер
   const [copiedText, setCopiedText] = useState("");
 
@@ -162,6 +169,51 @@ export default function App() {
   const showToast = (msg: string) => {
     setToastMessage(msg);
     setTimeout(() => setToastMessage(null), 4000);
+  };
+
+  // Метод центрирования вида на Miro-доске
+  const handleCenterView = () => {
+    setPan({ x: 40, y: 100 });
+    setZoom(0.85);
+    showToast("Вид доски отцентрирован 🎯");
+  };
+
+  // Расчет плавной кривой Безье для связей
+  const getBezierPath = (x1: number, y1: number, x2: number, y2: number, isRight: boolean) => {
+    if (isRight) {
+      const controlX = x1 + Math.max(80, (x2 - x1) * 0.45);
+      return `M ${x1} ${y1} C ${controlX} ${y1}, ${x2 - Math.max(80, (x2 - x1) * 0.45)} ${y2}, ${x2} ${y2}`;
+    } else {
+      const controlY = y1 + Math.max(60, (y2 - y1) * 0.45);
+      return `M ${x1} ${y1} C ${x1} ${controlY}, ${x2} ${y2 - Math.max(60, (y2 - y1) * 0.45)}, ${x2} ${y2}`;
+    }
+  };
+
+  // Обработчики мыши для перемещения по холсту
+  const handleCanvasMouseDown = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (
+      (e.target as HTMLElement).closest('.board-card') || 
+      (e.target as HTMLElement).closest('button') || 
+      (e.target as HTMLElement).closest('input') || 
+      (e.target as HTMLElement).closest('select') || 
+      (e.target as HTMLElement).closest('textarea')
+    ) {
+      return;
+    }
+    setIsDraggingCanvas(true);
+    setDragStart({ x: e.clientX - pan.x, y: e.clientY - pan.y });
+  };
+
+  const handleCanvasMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!isDraggingCanvas) return;
+    setPan({
+      x: e.clientX - dragStart.x,
+      y: e.clientY - dragStart.y
+    });
+  };
+
+  const handleCanvasMouseUp = () => {
+    setIsDraggingCanvas(false);
   };
 
   const handleLogout = () => {
@@ -1106,7 +1158,7 @@ export default function App() {
                           </button>
                           <button
                             onClick={handleAddMenuButton}
-                            className="px-2 py-1 bg-emerald-600 text-white font-bold rounded"
+                            className="px-2 py-1 bg-emerald-600 text-white font-bold rounded hover:bg-emerald-700 transition-colors"
                           >
                             Создать
                           </button>
@@ -1133,7 +1185,7 @@ export default function App() {
                                 e.stopPropagation();
                                 handleDeleteMenuButton(btn.id);
                               }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-rose-600"
+                              className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-rose-600 bg-transparent border-none cursor-pointer"
                             >
                               <Trash2 className="h-3.5 w-3.5" />
                             </button>
@@ -1143,9 +1195,9 @@ export default function App() {
                     </div>
                   </div>
 
-                  {/* Правая рабочая область: Водопад Сценария */}
+                  {/* Правая рабочая область: Miro-доска */}
                   <div className="lg:col-span-3 space-y-4">
-                    {selectedMenuBtn ? (
+                    {selectedMenuId && selectedMenuBtn ? (
                       <div>
                         
                         {/* Изменение названия вкладки меню */}
@@ -1161,7 +1213,7 @@ export default function App() {
                                 );
                                 updateScenarioState({ ...scenario, menu: updated });
                               }}
-                              className="w-full font-bold text-md text-slate-800 border-none px-0 py-0 focus:ring-0 focus:outline-none"
+                              className="w-full font-bold text-md text-slate-800 border-none px-0 py-0 focus:ring-0 focus:outline-none focus:border-none focus-visible:outline-none"
                             />
                           </div>
                           
@@ -1170,204 +1222,531 @@ export default function App() {
                           </div>
                         </div>
 
-                        {/* Список карточек водопада */}
-                        <div className="space-y-4 relative pl-4 border-l border-slate-250">
-                          {getOrderedWaterfall(selectedMenuBtn.startBlockId).map((blockId, index, array) => {
-                            const block = scenario.blocks[blockId];
-                            if (!block) return null;
+                        {/* Список карточек в формате Miro-доски */}
+                        {(() => {
+                          const coords: Record<string, { row: number; col: number }> = {};
+                          const visited = new Set<string>();
 
-                            return (
-                              <div key={blockId} className="relative group">
-                                <span className="absolute -left-[20px] top-4 w-2.5 h-2.5 rounded-full bg-slate-300 border-2 border-slate-50"></span>
-                                
-                                {/* ТИПИЗАЦИЯ КАРТОЧЕК */}
-                                <div className={`p-4 bg-white rounded-xl border shadow-xs transition-all ${
-                                  block.type === "text" ? "border-slate-200 hover:border-slate-300" :
-                                  block.type === "button" ? "border-blue-200 bg-blue-50/10 hover:border-blue-300" :
-                                  block.type === "link" ? "border-cyan-200 bg-cyan-50/10 hover:border-cyan-300" :
-                                  block.type === "pause" ? "border-purple-200 bg-purple-50/10 hover:border-purple-300" :
-                                  block.type === "wait_button" ? "border-rose-200 bg-rose-50/10 hover:border-rose-300" :
-                                  "border-amber-200 bg-amber-50/10"
-                                }`}>
-                                  
-                                  {/* Заголовок карточки с типом и экшенами */}
-                                  <div className="flex justify-between items-center mb-3">
-                                    <div className="flex items-center space-x-2">
-                                      <span className={`px-2 py-0.5 text-[9px] font-black uppercase rounded tracking-widest ${
-                                        block.type === "text" ? "bg-slate-100 text-slate-700 border border-slate-200" :
-                                        block.type === "button" ? "bg-blue-100 text-blue-700 border border-blue-200" :
-                                        block.type === "link" ? "bg-cyan-100 text-cyan-700 border border-cyan-200" :
-                                        block.type === "pause" ? "bg-purple-100 text-purple-700 border border-purple-200" :
-                                        block.type === "wait_button" ? "bg-rose-100 text-rose-700 border border-rose-200" :
-                                        "bg-amber-100 text-amber-700 border border-amber-200"
-                                      }`}>
-                                        {block.type === "text" && "📝 Текст"}
-                                        {block.type === "button" && "🔘 Кнопка-выбор"}
-                                        {block.type === "link" && "🔗 Ссылка"}
-                                        {block.type === "back" && "↩️ Назад"}
-                                        {block.type === "menu" && "🏠 В главное меню"}
-                                        {block.type === "pause" && "⏳ Пауза задержки"}
-                                        {block.type === "wait_button" && "🚦 Ожидание действия"}
-                                      </span>
-                                      
-                                      <span className="text-[10px] font-mono text-slate-400">ID: {block.id}</span>
-                                    </div>
+                          // Рекурсивный автоматический расчет сетки связей 2D
+                          function place(id: string | null | undefined, r: number, c: number) {
+                            if (!id || !scenario || visited.has(id)) return;
+                            visited.add(id);
 
-                                    {/* Action-кнопки управления карточкой */}
-                                    <div className="flex items-center space-x-1">
-                                      
-                                      {/* Стрелочка вверх */}
-                                      <button 
-                                        onClick={() => handleMoveBlock(blockId, "up")}
-                                        disabled={index === 0}
-                                        className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded disabled:opacity-30"
+                            let finalR = r;
+                            let finalC = c;
+                            
+                            // Защита от наложения карточек друг на друга: если ячейка занята, сдвигаем правее
+                            while (Object.values(coords).some(p => p.row === finalR && p.col === finalC)) {
+                              finalC += 1;
+                            }
+
+                            coords[id] = { row: finalR, col: finalC };
+
+                            const b = scenario.blocks[id];
+                            if (b) {
+                              // Сначала ответвления выбора (вправо)
+                              if (b.rightBlockId) {
+                                place(b.rightBlockId, finalR, finalC + 1);
+                              }
+                              // Затем последующая цепочка диалога (вниз)
+                              if (b.nextBlockId) {
+                                place(b.nextBlockId, finalR + 1, finalC);
+                              }
+                            }
+                          }
+
+                          if (selectedMenuBtn.startBlockId) {
+                            place(selectedMenuBtn.startBlockId, 0, 0);
+                          }
+
+                          // Ищем потерянные («сиротские») блоки и выстраиваем их в крайний правый столбец
+                          let maxCol = 0;
+                          Object.values(coords).forEach(p => {
+                            if (p.col > maxCol) maxCol = p.col;
+                          });
+
+                          let orphanRow = 0;
+                          Object.keys(scenario.blocks).forEach(id => {
+                            if (!visited.has(id)) {
+                              coords[id] = { row: orphanRow, col: maxCol + 2 };
+                              orphanRow += 1;
+                            }
+                          });
+
+                          // Базовая геометрия расположения на доске Miro
+                          const cardWidth = 280;
+                          const cardHeight = 135;
+                          const colWidth = 370;
+                          const rowHeight = 220;
+
+                          return (
+                            <div className="flex flex-col lg:flex-row gap-5 items-stretch h-[660px]">
+                              
+                              {/* ЗАБОР КАНВАСА РИСОВАНИЯ */}
+                              <div 
+                                className="flex-1 min-h-[400px] lg:h-full bg-slate-50 relative overflow-hidden border border-slate-200 rounded-2xl select-none"
+                                style={{ cursor: isDraggingCanvas ? 'grabbing' : 'grab' }}
+                                onMouseDown={handleCanvasMouseDown}
+                                onMouseMove={handleCanvasMouseMove}
+                                onMouseUp={handleCanvasMouseUp}
+                                onMouseLeave={handleCanvasMouseUp}
+                              >
+                                {/* Фоновая Miro-сетка из точек */}
+                                <div 
+                                  className="absolute inset-0 pointer-events-none" 
+                                  style={{
+                                    backgroundImage: 'radial-gradient(#cbd5e1 1.5px, transparent 1.5px)',
+                                    backgroundSize: `${22 * zoom}px ${22 * zoom}px`,
+                                    backgroundPosition: `${pan.x}px ${pan.y}px`,
+                                    opacity: 0.75
+                                  }}
+                                />
+
+                                {/* Трансформируемый контейнер элементов */}
+                                <div 
+                                  className="absolute origin-top-left"
+                                  style={{
+                                    transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                                    width: '10000px',
+                                    height: '10000px',
+                                  }}
+                                >
+                                  {/* Слой SVG соединений */}
+                                  <svg className="absolute inset-0 pointer-events-none overflow-visible w-full h-full">
+                                    <defs>
+                                      <marker
+                                        id="arrow-next"
+                                        viewBox="0 0 10 10"
+                                        refX="8"
+                                        refY="5"
+                                        markerWidth="6"
+                                        markerHeight="6"
+                                        orient="auto"
                                       >
-                                        <ArrowUp className="h-3.5 w-3.5" />
-                                      </button>
-
-                                      {/* Стрелочка вниз */}
-                                      <button 
-                                        onClick={() => handleMoveBlock(blockId, "down")}
-                                        disabled={index === array.length - 1}
-                                        className="p-1 text-slate-400 hover:text-slate-700 hover:bg-slate-50 rounded disabled:opacity-30"
+                                        <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
+                                      </marker>
+                                      <marker
+                                        id="arrow-right"
+                                        viewBox="0 0 10 10"
+                                        refX="8"
+                                        refY="5"
+                                        markerWidth="6"
+                                        markerHeight="6"
+                                        orient="auto"
                                       >
-                                        <ArrowDown className="h-3.5 w-3.5" />
-                                      </button>
+                                        <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" />
+                                      </marker>
+                                    </defs>
 
-                                      <div className="w-[1px] h-3 bg-slate-200" />
+                                    {/* Рисуем соединительные дуги по координатам на доске */}
+                                    {Object.entries(coords).map(([id, pos]) => {
+                                      const block = scenario.blocks[id];
+                                      if (!block) return null;
 
-                                      {/* Удалить элемент */}
-                                      <button 
-                                        onClick={() => handleDeleteBlock(blockId)}
-                                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded"
+                                      const x = pos.col * colWidth + 40;
+                                      const y = pos.row * rowHeight + 40;
+
+                                      const lines: React.ReactNode[] = [];
+
+                                      // Связь вниз (nextBlockId)
+                                      if (block.nextBlockId && coords[block.nextBlockId]) {
+                                        const np = coords[block.nextBlockId];
+                                        const startX = x + cardWidth / 2;
+                                        const startY = y + cardHeight;
+                                        const endX = np.col * colWidth + 40 + cardWidth / 2;
+                                        const endY = np.row * rowHeight + 40;
+
+                                        lines.push(
+                                          <g key={`${id}-to-next`} className="opacity-80 hover:opacity-100 transition-opacity">
+                                            <path 
+                                              d={getBezierPath(startX, startY, endX, endY, false)} 
+                                              fill="none" 
+                                              stroke="#10b981" 
+                                              strokeWidth="3" 
+                                              strokeDasharray={block.type === 'pause' ? '4 4' : 'none'}
+                                              markerEnd="url(#arrow-next)" 
+                                            />
+                                          </g>
+                                        );
+                                      }
+
+                                      // Связь вправо (rightBlockId)
+                                      if (block.rightBlockId && coords[block.rightBlockId]) {
+                                        const rp = coords[block.rightBlockId];
+                                        const startX = x + cardWidth;
+                                        const startY = y + cardHeight / 2;
+                                        const endX = rp.col * colWidth + 40;
+                                        const endY = rp.row * rowHeight + 40 + cardHeight / 2;
+
+                                        lines.push(
+                                          <g key={`${id}-to-right`} className="opacity-80 hover:opacity-100 transition-opacity">
+                                            <path 
+                                              d={getBezierPath(startX, startY, endX, endY, true)} 
+                                              fill="none" 
+                                              stroke="#3b82f6" 
+                                              strokeWidth="3" 
+                                              markerEnd="url(#arrow-right)" 
+                                            />
+                                          </g>
+                                        );
+                                      }
+
+                                      return lines;
+                                    })}
+                                  </svg>
+
+                                  {/* Рендеринг карточек блоков как визуальных нод */}
+                                  {Object.entries(coords).map(([id, pos]) => {
+                                    const block = scenario.blocks[id];
+                                    if (!block) return null;
+
+                                    const x = pos.col * colWidth + 40;
+                                    const y = pos.row * rowHeight + 40;
+                                    const isSelected = selectedBlockId === id;
+                                    const isOrphan = !visited.has(id);
+
+                                    return (
+                                      <div
+                                        key={id}
+                                        className={`board-card absolute rounded-2xl bg-white border cursor-pointer select-none group transition-all duration-200 ${
+                                          isSelected 
+                                            ? "ring-4 ring-emerald-500 ring-offset-2 border-emerald-500 shadow-md scale-[1.01] z-30" 
+                                            : "border-slate-200/90 hover:border-slate-350 hover:shadow-sm"
+                                        }`}
+                                        style={{
+                                          left: `${x}px`,
+                                          top: `${y}px`,
+                                          width: `${cardWidth}px`,
+                                          height: `${cardHeight}px`
+                                        }}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          setSelectedBlockId(id);
+                                        }}
                                       >
-                                        <Trash2 className="h-3.5 w-3.5" />
-                                      </button>
-                                    </div>
-
-                                  </div>
-
-                                  {/* Специфические поля карточки */}
-                                  <div className="space-y-3">
-                                    
-                                    {/* Текст / Описание / Кнопка */}
-                                    {(block.type === "text" || block.type === "button" || block.type === "link" || block.type === "back" || block.type === "menu") && (
-                                      <div>
-                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">
-                                          {block.type === "button" ? "Текст на кнопке" : "Текст сообщения"}
-                                        </label>
-                                        {block.type === "text" ? (
-                                          <textarea
-                                            value={block.text || ""}
-                                            onChange={(e) => handleUpdateBlockField(blockId, { text: e.target.value })}
-                                            rows={2}
-                                            className="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 leading-relaxed font-sans"
-                                          />
-                                        ) : (
-                                          <input
-                                            type="text"
-                                            value={block.text || ""}
-                                            onChange={(e) => handleUpdateBlockField(blockId, { text: e.target.value })}
-                                            className="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 font-bold"
-                                          />
-                                        )}
-                                      </div>
-                                    )}
-
-                                    {/* Ссылка URL */}
-                                    {block.type === "link" && (
-                                      <div>
-                                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Ссылка для перехода (URL)</label>
-                                        <input
-                                          type="text"
-                                          placeholder="https://example.com/file.pdf"
-                                          value={block.url || ""}
-                                          onChange={(e) => handleUpdateBlockField(blockId, { url: e.target.value })}
-                                          className="w-full text-xs px-3 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono text-indigo-600"
-                                        />
-                                      </div>
-                                    )}
-
-                                    {/* Пауза в секундах */}
-                                    {block.type === "pause" && (
-                                      <div className="flex items-center space-x-3 bg-purple-50/40 p-2.5 rounded-lg border border-purple-100">
-                                        <Clock className="h-5 w-5 text-purple-600 shrink-0" />
-                                        <div className="flex-1 flex items-center space-x-2">
-                                          <span className="text-xs font-bold text-purple-900">Задержка на:</span>
-                                          <input
-                                            type="number"
-                                            min={1}
-                                            value={block.seconds || 5}
-                                            onChange={(e) => handleUpdateBlockField(blockId, { seconds: parseInt(e.target.value) || 5 })}
-                                            className="w-16 text-xs text-center px-1 py-1 border border-purple-300 rounded focus:outline-none focus:ring-1 focus:ring-purple-400 font-black text-purple-900"
-                                          />
-                                          <span className="text-xs text-purple-900 font-bold">сек</span>
-                                        </div>
-                                      </div>
-                                    )}
-
-                                  </div>
-
-                                  {/* ПЛАШКА: Если кнопка разветвляется ВПРАВО (Button → rightBlockId) */}
-                                  {block.type === "button" && (
-                                    <div className="mt-3.5 pt-3 boundary-dashed-top border-t border-blue-100 flex flex-col md:flex-row gap-4 items-stretch">
-                                      
-                                      <div className="flex items-center space-x-1.5 shrink-0">
-                                        <ChevronRight className="h-4 w-4 text-blue-500" />
-                                        <span className="text-[10px] font-black text-blue-700 tracking-wider">ПЕРЕХОД НАПРАВО:</span>
-                                      </div>
-
-                                      <div className="flex-1 bg-white p-3 rounded-xl border border-blue-100/80 shadow-xs">
-                                        {block.rightBlockId ? (
-                                          <div className="flex justify-between items-center text-xs">
-                                            <div className="flex items-center space-x-1.5 font-bold text-blue-900">
-                                              <span>👉 Ветка ID:</span>
-                                              <span className="font-mono bg-blue-50 border border-blue-100 px-1.5 py-0.5 rounded">{block.rightBlockId}</span>
-                                            </div>
-                                            <button
+                                        {/* ПЛАВАЮЩИЙ ТУЛБАР УДАЛЕНИЯ ПРИ КЛИКЕ НА КАРТОЧКУ */}
+                                        {isSelected && (
+                                          <div 
+                                            className="absolute -top-12 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-3 py-1.5 rounded-lg shadow-xl flex items-center space-x-2 z-40"
+                                            onClick={(e) => e.stopPropagation()}
+                                          >
+                                            <span className="text-[9px] font-mono font-bold text-slate-300">ID: {block.id}</span>
+                                            <div className="w-[1px] h-3 bg-slate-700" />
+                                            <button 
                                               onClick={() => {
-                                                if (window.confirm("Удалить горизонтальную связь со списком правых элементов? Сценарии не удалятся, они останутся висеть в БД.")) {
-                                                  handleUpdateBlockField(blockId, { rightBlockId: null });
-                                                }
+                                                handleDeleteBlock(block.id);
+                                                setSelectedBlockId(null);
                                               }}
-                                              className="text-[10px] font-black text-rose-600 hover:underline"
+                                              className="text-[10px] font-black text-rose-300 hover:text-rose-100 flex items-center space-x-1 cursor-pointer"
                                             >
-                                              Разорвать
-                                            </button>
-                                          </div>
-                                        ) : (
-                                          <div className="flex justify-between items-center text-[11px] text-slate-400 font-medium">
-                                            <span>Кнопка работает как Чекбокс-галочка.</span>
-                                            <button
-                                              onClick={() => setActiveAddPopover({ blockId: block.id, relation: "right" })}
-                                              className="text-xs font-black text-blue-600 hover:underline inline-flex items-center"
-                                            >
-                                              <Plus className="h-3 w-3 mr-1" /> Присоединить ветку
+                                              <Trash2 className="h-3 w-3 mr-0.5" />
+                                              <span>УДАЛИТЬ</span>
                                             </button>
                                           </div>
                                         )}
+
+                                        {/* ЗАГОЛОВОК НОДЫ (Разноцветный хедер по типам) */}
+                                        <div className={`px-3.5 py-2.5 rounded-t-2xl border-b flex justify-between items-center ${
+                                          block.type === 'text' ? 'bg-slate-50 border-slate-100 text-slate-700' :
+                                          block.type === 'button' ? 'bg-blue-50/60 border-blue-100 text-blue-800 font-extrabold' :
+                                          block.type === 'link' ? 'bg-cyan-50/65 border-cyan-100 text-cyan-800' :
+                                          block.type === 'pause' ? 'bg-purple-50 border-purple-100 text-purple-700 font-bold' :
+                                          block.type === 'back' ? 'bg-amber-50 border-amber-100 text-amber-800' :
+                                          block.type === 'menu' ? 'bg-emerald-50 border-emerald-100 text-emerald-800' :
+                                          'bg-rose-50 border-rose-100 text-rose-800'
+                                        }`}>
+                                          <div className="flex items-center space-x-2 min-w-0">
+                                            <span className="text-[11px] shrink-0">
+                                              {block.type === 'text' && "📝"}
+                                              {block.type === 'button' && "🔘"}
+                                              {block.type === 'link' && "🔗"}
+                                              {block.type === 'pause' && "⏳"}
+                                              {block.type === 'back' && "↩️"}
+                                              {block.type === 'menu' && "🏠"}
+                                              {block.type === 'wait_button' && "🚦"}
+                                            </span>
+                                            <span className="text-[10px] font-black uppercase tracking-wider truncate">
+                                              {block.type === 'text' && "Описание"}
+                                              {block.type === 'button' && "Кнопка выбора"}
+                                              {block.type === 'link' && "Внешняя Ссылка"}
+                                              {block.type === 'pause' && "Задержка"}
+                                              {block.type === 'back' && "Кнопка Назад"}
+                                              {block.type === 'menu' && "Главное меню"}
+                                              {block.type === 'wait_button' && "Ожидание действия"}
+                                            </span>
+                                          </div>
+                                          
+                                          {isOrphan && (
+                                            <span className="text-[8px] bg-amber-100 text-amber-700 font-bold px-1 rounded-sm">СИРОТА</span>
+                                          )}
+                                        </div>
+
+                                        {/* КОНТЕНТ НОДЫ */}
+                                        <div className="p-3 text-[11px] leading-snug">
+                                          {block.type === 'pause' ? (
+                                            <div className="flex items-center space-x-1.5 text-purple-900 bg-purple-50/60 p-2 rounded-lg border border-purple-100 font-bold">
+                                              <Clock className="w-3.5 h-3.5 text-purple-600" />
+                                              <span>Задержка: {block.seconds || 5} секунд</span>
+                                            </div>
+                                          ) : block.type === 'link' ? (
+                                            <div className="space-y-1">
+                                              <div className="font-extrabold text-slate-800 truncate">{block.text || "Ссылка без текста"}</div>
+                                              <div className="text-[9px] font-mono text-indigo-500 truncate">{block.url || "https://"}</div>
+                                            </div>
+                                          ) : (
+                                            <p className="text-slate-600 font-medium line-clamp-3 leading-relaxed">
+                                              {block.text || <em className="text-slate-400">Текст не настроен...</em>}
+                                            </p>
+                                          )}
+                                        </div>
+
+                                        {/* ИНТЕРАКТИВНЫЕ ПЛЮСИКИ ДОБАВЛЕНИЯ КАРТОЧЕК */}
+                                        {/* Плюс вниз (relation: next) */}
+                                        {!block.nextBlockId && (
+                                          <button
+                                            className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-5 h-5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center border border-white shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-all z-25"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setActiveAddPopover({ blockId: id, relation: "next" });
+                                            }}
+                                            title="Вставить следующее действие по цепочке ниже"
+                                          >
+                                            <Plus className="h-3 w-3" />
+                                          </button>
+                                        )}
+
+                                        {/* Плюс вправо (relation: right) для разветвления на кнопках */}
+                                        {block.type === 'button' && !block.rightBlockId && (
+                                          <button
+                                            className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center border border-white shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-all z-25"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setActiveAddPopover({ blockId: id, relation: "right" });
+                                            }}
+                                            title="Привязать правую ветку выбора к этой кнопке"
+                                          >
+                                            <Plus className="h-3 w-3" />
+                                          </button>
+                                        )}
                                       </div>
-
-                                    </div>
-                                  )}
-
+                                    );
+                                  })}
                                 </div>
 
-                                {/* ПОДВЕСКА ДОБАВЛЕНИЯ БЛОКА ВНИЗУ (МЕЖДУ КАРТОЧКАМИ) */}
-                                <div className="h-8 flex justify-center items-center relative">
-                                  <div className="w-[1px] h-full bg-slate-300"></div>
+                                {/* ИНСТРУМЕНТАЛЬНАЯ HUD-ПАНЕЛЬ МАСШТАБА И ВИДА */}
+                                <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-xs px-3 py-2 rounded-xl border border-slate-200/85 shadow-md flex items-center space-x-3 text-xs font-bold text-slate-700 z-30 pointer-events-auto">
+                                  <div className="flex items-center space-x-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                                    <button 
+                                      className="px-2 py-0.5 hover:bg-white rounded transition-colors text-slate-500 hover:text-slate-800 text-xs font-black"
+                                      onClick={() => setZoom(prev => Math.max(0.4, prev - 0.15))}
+                                      title="Уменьшить масштаб"
+                                    >
+                                      -
+                                    </button>
+                                    <span className="px-1.5 font-mono text-[9px] text-slate-650">
+                                      {Math.round(zoom * 100)}%
+                                    </span>
+                                    <button 
+                                      className="px-2 py-0.5 hover:bg-white rounded transition-colors text-slate-500 hover:text-slate-800 text-xs font-black"
+                                      onClick={() => setZoom(prev => Math.min(1.4, prev + 0.15))}
+                                      title="Увеличить масштаб"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                  
+                                  <div className="w-[1px] h-4 bg-slate-200" />
+                                  
                                   <button
-                                    className="absolute p-1 bg-white hover:bg-emerald-50 text-slate-400 hover:text-emerald-600 border border-slate-300 hover:border-emerald-300 rounded-full shadow-xs transition-all opacity-0 group-hover:opacity-100 z-10 cursor-pointer"
-                                    onClick={() => setActiveAddPopover({ blockId: block.id, relation: "next" })}
+                                    onClick={handleCenterView}
+                                    className="px-2 py-1 hover:bg-slate-150 text-[10px] text-indigo-600 font-extrabold uppercase tracking-wide border border-indigo-200/50 rounded-lg transition-colors cursor-pointer"
                                   >
-                                    <Plus className="h-3 w-3" />
+                                    🎯 Сброс вида
                                   </button>
+
+                                  <div className="hidden sm:inline-block text-[9px] text-slate-450 font-medium">
+                                    Зажмите пустую область для перемещения
+                                  </div>
                                 </div>
 
                               </div>
-                            );
-                          })}
-                        </div>
+
+                              {/* БОКОВАЯ FIGMA-ПАНЕЛЬ НАСТРОЕК ВЫДЕЛЕННОГО БЛОКА */}
+                              {selectedBlockId && scenario.blocks[selectedBlockId] ? (() => {
+                                const activeBlock = scenario.blocks[selectedBlockId];
+                                return (
+                                  <motion.div 
+                                    initial={{ opacity: 0, x: 25 }}
+                                    animate={{ opacity: 1, x: 0 }}
+                                    className="w-full lg:w-[320px] bg-white rounded-2xl border border-slate-200 p-4 shrink-0 flex flex-col justify-between overflow-y-auto"
+                                  >
+                                    <div className="space-y-4">
+                                      {/* Локальная шапка инспектора */}
+                                      <div className="flex justify-between items-center pb-2.5 border-b border-slate-100">
+                                        <div>
+                                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Параметры блока</h4>
+                                          <span className="text-[10px] font-mono text-slate-400 font-bold">id: {activeBlock.id}</span>
+                                        </div>
+                                        <button 
+                                          onClick={() => setSelectedBlockId(null)}
+                                          className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1 rounded font-black text-xs"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+
+                                      {/* 1. Логический тип блока в БД */}
+                                      <div>
+                                        <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Тип действия элемента:</label>
+                                        <select
+                                          value={activeBlock.type}
+                                          onChange={(e) => handleUpdateBlockField(activeBlock.id, { type: e.target.value as ScenarioBlock["type"] })}
+                                          className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-400 focus:outline-none bg-slate-50 font-bold text-slate-700"
+                                        >
+                                          <option value="text">📝 Сообщение-Текст</option>
+                                          <option value="button">🔘 Кнопка выбора</option>
+                                          <option value="link">🔗 Веб-ссылка URL</option>
+                                          <option value="pause">⏳ Пауза (задержка)</option>
+                                          <option value="back">↩️ Кнопка «Назад»</option>
+                                          <option value="menu">🏠 Кнопка «В меню»</option>
+                                          <option value="wait_button">🚦 Ожидание клика</option>
+                                        </select>
+                                      </div>
+
+                                      {/* 2. Текст сообщения / кнопка */}
+                                      {(activeBlock.type === "text" || activeBlock.type === "button" || activeBlock.type === "link" || activeBlock.type === "back" || activeBlock.type === "menu") && (
+                                        <div>
+                                          <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                                            {activeBlock.type === "button" ? "Текст кнопки выбора" : "Отправляемый текст сообщения"}
+                                          </label>
+                                          {activeBlock.type === "text" ? (
+                                            <textarea
+                                              value={activeBlock.text || ""}
+                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { text: e.target.value })}
+                                              rows={6}
+                                              placeholder="Введите текст сообщения... Поддерживаются HTML разметки <b>жирный</b>, <i>курсив</i>, <code>код</code>."
+                                              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 leading-normal font-sans text-slate-700"
+                                            />
+                                          ) : (
+                                            <input
+                                              type="text"
+                                              value={activeBlock.text || ""}
+                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { text: e.target.value })}
+                                              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 font-bold text-slate-700"
+                                            />
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* 3. Ссылка URL для внешних кнопок */}
+                                      {activeBlock.type === "link" && (
+                                        <div>
+                                          <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Веб-ссылка перехода (URL):</label>
+                                          <input
+                                            type="text"
+                                            placeholder="https://"
+                                            value={activeBlock.url || ""}
+                                            onChange={(e) => handleUpdateBlockField(activeBlock.id, { url: e.target.value })}
+                                            className="w-full text-[11px] px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono text-indigo-650 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                                          />
+                                        </div>
+                                      )}
+
+                                      {/* 4. Задержка в секундах для паузы */}
+                                      {activeBlock.type === "pause" && (
+                                        <div className="bg-purple-50 p-3 rounded-xl border border-purple-100">
+                                          <label className="block text-[9px] font-black text-purple-700 uppercase tracking-widest mb-1.5">Таймаут задержки в секундах:</label>
+                                          <div className="flex items-center space-x-2">
+                                            <input
+                                              type="number"
+                                              min={1}
+                                              value={activeBlock.seconds || 5}
+                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { seconds: parseInt(e.target.value) || 5 })}
+                                              className="w-20 text-xs px-2 py-1 border border-purple-200 rounded text-center font-bold text-purple-950 bg-white"
+                                            />
+                                            <span className="text-xs text-purple-900 font-bold">сек.</span>
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* 5. Настройка связей (Select-дропдауны прямого маппинга) */}
+                                      <div className="space-y-2.5 pt-3 border-t border-slate-100">
+                                        <h5 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Переопределение связей:</h5>
+                                        
+                                        <div>
+                                          <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Связь ВНИЗ (next):</label>
+                                          <select
+                                            value={activeBlock.nextBlockId || ""}
+                                            onChange={(e) => handleUpdateBlockField(activeBlock.id, { nextBlockId: e.target.value || null })}
+                                            className="w-full text-[11px] px-2 py-1 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none"
+                                          >
+                                            <option value="">Нет (Прервать цепочку)</option>
+                                            {Object.keys(scenario.blocks).map((blkId) => {
+                                              if (blkId === activeBlock.id) return null;
+                                              const b = scenario.blocks[blkId];
+                                              return (
+                                                <option key={blkId} value={blkId}>
+                                                  {blkId} ({b?.type}: {b?.text?.substring(0, 16)}...)
+                                                </option>
+                                              );
+                                            })}
+                                          </select>
+                                        </div>
+
+                                        {activeBlock.type === "button" && (
+                                          <div>
+                                            <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Связь ВПРАВО (right):</label>
+                                            <select
+                                              value={activeBlock.rightBlockId || ""}
+                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { rightBlockId: e.target.value || null })}
+                                              className="w-full text-[11px] px-2 py-1 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none"
+                                            >
+                                              <option value="">Нет (Без правой ветки)</option>
+                                              {Object.keys(scenario.blocks).map((blkId) => {
+                                                if (blkId === activeBlock.id) return null;
+                                                const b = scenario.blocks[blkId];
+                                                return (
+                                                  <option key={blkId} value={blkId}>
+                                                    {blkId} ({b?.type}: {b?.text?.substring(0, 16)}...)
+                                                  </option>
+                                                );
+                                              })}
+                                            </select>
+                                          </div>
+                                        )}
+                                      </div>
+
+                                    </div>
+
+                                    {/* Удаление карточки */}
+                                    <div className="pt-3 border-t border-slate-100">
+                                      <button
+                                        onClick={() => {
+                                          handleDeleteBlock(activeBlock.id);
+                                          setSelectedBlockId(null);
+                                        }}
+                                        className="w-full flex items-center justify-center py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl border border-rose-100 text-xs font-black transition-colors"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                                        Удалить блок
+                                      </button>
+                                    </div>
+                                  </motion.div>
+                                );
+                              })() : (
+                                <div className="hidden lg:flex w-[320px] bg-slate-50 border border-dashed border-slate-200 rounded-2xl items-center justify-center p-6 text-center shrink-0">
+                                  <div className="space-y-2">
+                                    <div className="text-xl">👇</div>
+                                    <p className="text-[11px] text-slate-400 font-bold leading-normal">
+                                      Выберите любой блок на Miro-карте, чтобы редактировать его текст, события и связи.
+                                    </p>
+                                  </div>
+                                </div>
+                              )}
+
+                            </div>
+                          );
+                        })()}
 
                       </div>
                     ) : (

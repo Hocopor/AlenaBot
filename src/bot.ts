@@ -16,7 +16,13 @@ export class TelegramBotService {
   private addLog(msg: string) {
     const time = new Date().toISOString().replace("T", " ").substring(0, 19);
     const entry = `[${time}] ${msg}`;
-    console.log(entry);
+    
+    // Пишем в консоль только критические ошибки и предупреждения для минимизации логов
+    const lower = msg.toLowerCase();
+    if (lower.includes("error") || lower.includes("failed") || lower.includes("critical") || lower.includes("crash")) {
+      console.error(entry);
+    }
+    
     this.logMessages.push(entry);
     if (this.logMessages.length > 100) {
       this.logMessages.shift();
@@ -94,10 +100,16 @@ export class TelegramBotService {
         this.addLog(`Could not register menu commands: ${cmdErr.message || cmdErr}`);
       }
 
-      const appUrl = process.env.APP_URL;
+      let appUrl = process.env.APP_URL;
       
-      if (appUrl && appUrl.startsWith("https")) {
-        // Пробуем настроить Вебхук
+      if (appUrl) {
+        // Если указан хост без протокола, форсируем https схему
+        if (!appUrl.startsWith("http://") && !appUrl.startsWith("https://")) {
+          appUrl = "https://" + appUrl;
+        } else if (appUrl.startsWith("http://")) {
+          appUrl = appUrl.replace("http://", "https://");
+        }
+        
         const webhookUrl = `${appUrl.replace(/\/$/, "")}/api/telegram-webhook`;
         this.addLog(`Attempting to set webhook to: ${webhookUrl}`);
         
@@ -114,7 +126,7 @@ export class TelegramBotService {
           this.addLog(`Webhook installation failed! Error: ${webhookErr.message || webhookErr}. Falling back to Long Polling...`);
         }
       } else {
-        this.addLog("APP_URL is not set or not HTTPS. Falling back to Long Polling mode...");
+        this.addLog("APP_URL environment variable is not configured. Falling back to Long Polling mode...");
       }
 
       // Если вебхуки не работают или домен не настроен, запускаем Polling
