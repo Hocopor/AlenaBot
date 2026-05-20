@@ -29,7 +29,9 @@ import {
   Lock,
   Link,
   Check,
-  AlertCircle
+  AlertCircle,
+  Minus,
+  Focus
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -65,6 +67,7 @@ interface ScenarioBlock {
   text?: string;
   url?: string;
   seconds?: number;
+  isOnce?: boolean;
   nextBlockId?: string | null;
   rightBlockId?: string | null;
 }
@@ -78,6 +81,7 @@ interface ScenarioMenuButton {
 interface ScenarioConfig {
   telegramBotToken: string;
   contactLink: string;
+  startBlockId?: string;
   menu: ScenarioMenuButton[];
   blocks: Record<string, ScenarioBlock>;
 }
@@ -1189,7 +1193,7 @@ export default function App() {
                       const inDegree: Record<string, number> = {};
                       Object.keys(scenario.blocks).forEach(id => inDegree[id] = 0);
                       
-                      Object.values(scenario.blocks).forEach(b => {
+                      Object.values(scenario.blocks).forEach((b: ScenarioBlock) => {
                         if (b.nextBlockId) inDegree[b.nextBlockId] = (inDegree[b.nextBlockId] || 0) + 1;
                         if (b.rightBlockId) inDegree[b.rightBlockId] = (inDegree[b.rightBlockId] || 0) + 1;
                       });
