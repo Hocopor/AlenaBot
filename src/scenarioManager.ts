@@ -103,7 +103,13 @@ const defaultScenario: ScenarioConfig = {
       id: "start_btn_1",
       type: "button",
       text: "Понятно",
-      isOnce: true
+      isOnce: true,
+      nextBlockId: "start_to_menu"
+    },
+    "start_to_menu": {
+      id: "start_to_menu",
+      type: "menu",
+      text: "«В меню»"
     },
     // Ветка 1 Дневник микро-побед
     "diary_header": {

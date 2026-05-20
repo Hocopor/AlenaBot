@@ -334,6 +334,12 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         const conf = data.draft as ScenarioConfig;
+        
+        // Базовые фоллбеки для защиты от старых или пустых конфигов
+        if (!conf.blocks) conf.blocks = {};
+        if (!conf.menu) conf.menu = [];
+        if (!conf.startBlockId) conf.startBlockId = "start_node";
+
         setScenario(conf);
         
         // Установка токена и ссылки для формы настроек
@@ -345,7 +351,9 @@ export default function App() {
         setHistoryIndex(0);
         setHasUnsavedChanges(data.hasDraft);
 
-        if (conf.menu && conf.menu.length > 0) {
+        // НЕ ограничиваем выбранный пункт меню первым, так как вся логика на одной доске
+        // Если меню есть, пусть выделен первый, чисто чтобы подсветка была
+        if (conf.menu && conf.menu.length > 0 && !selectedMenuId) {
           setSelectedMenuId(conf.menu[0].id);
         }
       }
@@ -1196,6 +1204,13 @@ export default function App() {
                       Object.values(scenario.blocks).forEach((b: ScenarioBlock) => {
                         if (b.nextBlockId) inDegree[b.nextBlockId] = (inDegree[b.nextBlockId] || 0) + 1;
                         if (b.rightBlockId) inDegree[b.rightBlockId] = (inDegree[b.rightBlockId] || 0) + 1;
+                        if (b.type === 'menu') {
+                          scenario.menu.forEach(m => {
+                            if (m.startBlockId) {
+                              inDegree[m.startBlockId] = (inDegree[m.startBlockId] || 0) + 1;
+                            }
+                          });
+                        }
                       });
 
                       let currentRow = 0;
@@ -1224,6 +1239,16 @@ export default function App() {
                           // Затем последующая цепочка диалога (вниз)
                           if (b.nextBlockId) {
                             place(b.nextBlockId, Math.max(finalR + 1, currentRow + 1), finalC);
+                          }
+                          // Узел типа menu ветвится на все пункты главного меню
+                          if (b.type === 'menu') {
+                            let menuC = finalC;
+                            scenario.menu.forEach(m => {
+                              if (m.startBlockId) {
+                                place(m.startBlockId, Math.max(finalR + 1, currentRow + 1), menuC);
+                                menuC += 1;
+                              }
+                            });
                           }
                         }
                         
@@ -1282,8 +1307,26 @@ export default function App() {
                                 onMouseLeave={handleCanvasMouseUp}
                                 onWheel={(e) => {
                                   e.preventDefault();
-                                  let delta = e.deltaY * -0.002;
-                                  setZoom(prev => Math.min(Math.max(0.2, prev + delta), 2));
+                                  setZoom(prevZoom => {
+                                    const newZoom = Math.min(Math.max(0.2, prevZoom - e.deltaY * 0.002), 2);
+                                    if (newZoom === prevZoom) return prevZoom;
+                                    
+                                    const rect = e.currentTarget.getBoundingClientRect();
+                                    const mouseX = e.clientX - rect.left;
+                                    const mouseY = e.clientY - rect.top;
+
+                                    setPan(prevPan => {
+                                      const canvasX = (mouseX - prevPan.x) / prevZoom;
+                                      const canvasY = (mouseY - prevPan.y) / prevZoom;
+
+                                      return {
+                                        x: mouseX - canvasX * newZoom,
+                                        y: mouseY - canvasY * newZoom
+                                      };
+                                    });
+                                    
+                                    return newZoom;
+                                  });
                                 }}
                               >
                                 {/* Фоновая Miro-сетка из точек */}
@@ -1314,6 +1357,9 @@ export default function App() {
                                       </marker>
                                       <marker id="arrow-right" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
                                         <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" />
+                                      </marker>
+                                      <marker id="arrow-menu" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                                        <path d="M 0 1 L 10 5 L 0 9 z" fill="#f59e0b" />
                                       </marker>
                                     </defs>
 
@@ -1368,6 +1414,31 @@ export default function App() {
                                             />
                                           </g>
                                         );
+                                      }
+
+                                      // Связи ко всем рут-поинтам пунктов меню у блока "menu"
+                                      if (block.type === 'menu') {
+                                        scenario.menu.forEach((m, idx) => {
+                                          if (m.startBlockId && coords[m.startBlockId]) {
+                                            const rp = coords[m.startBlockId];
+                                            const startX = x + cardWidth / 4 + (cardWidth / 2) * (idx / Math.max(1, scenario.menu.length));
+                                            const startY = y + cardHeight;
+                                            const endX = rp.col * colWidth + 40 + cardWidth / 2;
+                                            const endY = rp.row * rowHeight + 40;
+                                            lines.push(
+                                              <g key={`${id}-to-menu-${m.id}`} className="opacity-40 hover:opacity-90 transition-opacity">
+                                                <path 
+                                                  d={getBezierPath(startX, startY, endX, endY, false)} 
+                                                  fill="none" 
+                                                  stroke="#f59e0b" 
+                                                  strokeWidth="2"
+                                                  strokeDasharray="6 6"
+                                                  markerEnd="url(#arrow-menu)" 
+                                                />
+                                              </g>
+                                            );
+                                          }
+                                        });
                                       }
 
                                       return lines;
