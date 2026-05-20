@@ -414,7 +414,12 @@ export class TelegramBotService {
           break;
         }
         case "wait_button": {
-          // Блок приостанавливает выполнение. Ожидаем нажатия кнопки
+          // Блок приостанавливает выполнение. Ожидаем нажатия кнопки.
+          // Но если этот блок вызван вручную (из обработчика кнопки),
+          // он может служить "пропускным пунктом" к следующему блоку.
+          if (block.nextBlockId) {
+             await this.executeBlock(ctx, block.nextBlockId, userId);
+          }
           break;
         }
         case "button": {
@@ -621,10 +626,15 @@ export class TelegramBotService {
             checked = checked.filter(id => id !== btnId);
           }
           
-          sessionManager.updateSession(userId, { checkedButtons: checked, menuUnlocked: true });
+          const updates: any = { checkedButtons: checked };
+          if (btn.isMenuUnlock) {
+            updates.menuUnlocked = true;
+          }
+          
+          sessionManager.updateSession(userId, updates);
 
           // Если меню только что разблокировалось, обновим Reply Keyboard (отправив уведомление один раз)
-          if (!session.menuUnlocked) {
+          if (btn.isMenuUnlock && !session.menuUnlocked) {
              await ctx.reply("Доступно новое меню поддержки. Внизу экрана появилась кнопка «Вернуться в меню» 🤍", {
                reply_markup: this.makeReplyKeyboard(true)
              });
@@ -671,9 +681,31 @@ export class TelegramBotService {
 
           await ctx.answerCallbackQuery();
 
+          // Поиск блока продолжения (Wait Button) после группы кнопок
+          let waitBlockId: string | null = null;
           if (btn.rightBlockId) {
-            // Кнопка имеет связь вправо — переходим дальше по этой ветви!
-            await this.executeBlock(ctx, btn.rightBlockId, userId);
+            waitBlockId = btn.rightBlockId;
+          } else {
+            // Если нет линка вправо, ищем wait_button за концом группы кнопок
+            let currentInGroup: ScenarioBlock = btn;
+            while (currentInGroup.nextBlockId && config.blocks[currentInGroup.nextBlockId]?.type === "button") {
+              currentInGroup = config.blocks[currentInGroup.nextBlockId];
+            }
+            if (currentInGroup.nextBlockId && config.blocks[currentInGroup.nextBlockId]?.type === "wait_button") {
+              waitBlockId = currentInGroup.nextBlockId;
+            }
+          }
+
+          if (waitBlockId) {
+            if (!session.triggeredWaitBlocks) {
+              session.triggeredWaitBlocks = [];
+            }
+            if (!session.triggeredWaitBlocks.includes(waitBlockId)) {
+              const updatedWait = [...session.triggeredWaitBlocks, waitBlockId];
+              sessionManager.updateSession(userId, { triggeredWaitBlocks: updatedWait });
+              // Кнопка имеет связь вправо ИЛИ за группой стоит wait_button — переходим дальше!
+              await this.executeBlock(ctx, waitBlockId, userId);
+            }
           }
         }
         return;
@@ -706,7 +738,8 @@ export class TelegramBotService {
       startedAt: new Date().toISOString(),
       lastStartTimestamp: timestampNow,
       checkedButtons: [],
-      historyBlocks: []
+      historyBlocks: [],
+      triggeredWaitBlocks: []
     });
 
     const config = scenarioManager.loadConfig();

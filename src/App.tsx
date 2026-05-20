@@ -160,6 +160,43 @@ export default function App() {
   const [isDraggingCanvas, setIsDraggingCanvas] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  // Обработка Zoom через колесико (с привязкой к курсору)
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      // Предотвращаем стандартный скролл страницы и масштабирование браузера
+      e.preventDefault();
+
+      const rect = el.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const zoomDelta = e.deltaY * -0.002;
+
+      setZoom((prevZoom) => {
+        const newZoom = Math.min(Math.max(0.2, prevZoom + zoomDelta), 2);
+        if (newZoom === prevZoom) return prevZoom;
+
+        setPan((prevPan) => {
+          const canvasX = (mouseX - prevPan.x) / prevZoom;
+          const canvasY = (mouseY - prevPan.y) / prevZoom;
+
+          return {
+            x: mouseX - canvasX * newZoom,
+            y: mouseY - canvasY * newZoom
+          };
+        });
+
+        return newZoom;
+      });
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []);
 
   // Копирование в буфер
   const [copiedText, setCopiedText] = useState("");
@@ -1299,32 +1336,13 @@ export default function App() {
                               
                               {/* ЗАБОР КАНВАСА РИСОВАНИЯ */}
                               <div 
+                                ref={canvasRef}
                                 className="flex-1 bg-slate-50 relative overflow-hidden border border-slate-200 rounded-2xl select-none touch-none"
                                 style={{ cursor: isDraggingCanvas ? 'grabbing' : 'grab' }}
                                 onMouseDown={handleCanvasMouseDown}
                                 onMouseMove={handleCanvasMouseMove}
                                 onMouseUp={handleCanvasMouseUp}
                                 onMouseLeave={handleCanvasMouseUp}
-                                onWheel={(e) => {
-                                  // Предотвращаем стандартный скролл страницы
-                                  const rect = e.currentTarget.getBoundingClientRect();
-                                  const mouseX = e.clientX - rect.left;
-                                  const mouseY = e.clientY - rect.top;
-
-                                  const zoomDelta = e.deltaY * -0.002;
-                                  const newZoom = Math.min(Math.max(0.2, zoom + zoomDelta), 2);
-                                  
-                                  if (newZoom !== zoom) {
-                                    const canvasX = (mouseX - pan.x) / zoom;
-                                    const canvasY = (mouseY - pan.y) / zoom;
-
-                                    setPan({
-                                      x: mouseX - canvasX * newZoom,
-                                      y: mouseY - canvasY * newZoom
-                                    });
-                                    setZoom(newZoom);
-                                  }
-                                }}
                               >
                                 {/* Фоновая Miro-сетка из точек */}
                                 <div 

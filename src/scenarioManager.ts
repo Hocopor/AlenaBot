@@ -9,6 +9,7 @@ export interface ScenarioBlock {
   url?: string;
   seconds?: number;
   isOnce?: boolean;
+  isMenuUnlock?: boolean;
   nextBlockId?: string | null;  // Ссылка на следующий блок вниз
   rightBlockId?: string | null; // Ссылка на блок справа (для типа button)
 }
