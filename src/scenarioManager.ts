@@ -4,10 +4,11 @@ import crypto from "crypto";
 
 export interface ScenarioBlock {
   id: string;
-  type: 'text' | 'button' | 'link' | 'back' | 'menu' | 'pause' | 'wait_button';
+  type: 'text' | 'button' | 'link' | 'back' | 'menu' | 'pause' | 'wait_button' | 'file' | 'audio';
   text?: string;
   url?: string;
   seconds?: number;
+  isOnce?: boolean;
   nextBlockId?: string | null;  // Ссылка на следующий блок вниз
   rightBlockId?: string | null; // Ссылка на блок справа (для типа button)
 }
@@ -28,6 +29,7 @@ export interface ScenarioError {
 export interface ScenarioConfig {
   telegramBotToken: string;
   contactLink: string;
+  startBlockId?: string;
   menu: ScenarioMenuButton[];
   blocks: Record<string, ScenarioBlock>;
 }
@@ -75,6 +77,7 @@ export function decryptToken(token: string): string {
 const defaultScenario: ScenarioConfig = {
   telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || "",
   contactLink: "https://t.me/ibanezebi64",
+  startBlockId: "start_node",
   menu: [
     { id: "menu_diary", text: "ДНЕВНИК МИКРО-ПОБЕД — Гайд", startBlockId: "diary_header" },
     { id: "menu_audio", text: "АУДИО ВРЕМЯ — музыка", startBlockId: "audio_header" },
@@ -84,6 +87,24 @@ const defaultScenario: ScenarioConfig = {
     { id: "menu_rebirth", text: "🩶 ГРУППА «ПЕРЕРОЖДЕНИЕ»", startBlockId: "rebirth_content" }
   ],
   blocks: {
+    "start_node": {
+      id: "start_node",
+      type: "text",
+      text: "Привет! Добро пожаловать. Это стартовое сообщение.",
+      nextBlockId: "start_pause_1",
+    },
+    "start_pause_1": {
+      id: "start_pause_1",
+      type: "pause",
+      seconds: 5,
+      nextBlockId: "start_btn_1"
+    },
+    "start_btn_1": {
+      id: "start_btn_1",
+      type: "button",
+      text: "Понятно",
+      isOnce: true
+    },
     // Ветка 1 Дневник микро-побед
     "diary_header": {
       id: "diary_header",
@@ -657,6 +678,18 @@ export class ScenarioManager {
             blockText: block.text,
             message: `${heading} имеет невалидный URL: "${block.url}".`,
             recommendation: "Ссылка должна начинаться с http:// или https:// и быть корректным URL-адресом."
+          });
+        }
+      }
+
+      // Проверка файлов и аудио
+      if (block.type === 'file' || block.type === 'audio') {
+        if (!block.url || !block.url.trim()) {
+          errors.push({
+            blockId: block.id,
+            blockText: block.text,
+            message: `${heading} не содержит прикрепленный файл или ссылку.`,
+            recommendation: "Загрузите файл или укажите путь/URL к медиафайлу."
           });
         }
       }

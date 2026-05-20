@@ -1,5 +1,6 @@
 import express from "express";
 import path from "path";
+import fileUpload from "express-fileupload";
 import fs from "fs";
 import crypto from "crypto";
 import dotenv from "dotenv";
@@ -61,6 +62,16 @@ async function startServer() {
   // Telegram API отправляет обновления в формате JSON, поэтому нам обязательно нужен парсер
   app.use(express.json());
 
+  // Разрешаем загрузку файлов во временную папку
+  app.use(fileUpload({
+    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
+    useTempFiles: true,
+    tempFileDir: "/tmp/"
+  }));
+
+  // Раздача статических медиафайлов/документов, загруженных админами
+  app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
+
   // Логгирование входящих HTTP запросов (только ошибки >= 400)
   app.use((req, res, next) => {
     res.on("finish", () => {
@@ -85,6 +96,45 @@ async function startServer() {
   // API: Здоровье сервера
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
+  });
+
+  // API: Загрузка файлов и аудио для блоков конструктора сценариев (Защищено)
+  app.post("/api/upload", checkAuth, (req: any, res) => {
+    try {
+      if (!req.files || Object.keys(req.files).length === 0) {
+        return res.status(400).json({ error: "Файл не передан." });
+      }
+
+      const fileKey = Object.keys(req.files)[0];
+      const uploadedFile = req.files[fileKey];
+      const file = Array.isArray(uploadedFile) ? uploadedFile[0] : uploadedFile;
+
+      const uploadDir = path.join(process.cwd(), "uploads");
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+
+      // Генерация уникального случайного имени
+      const rawExt = path.extname(file.name);
+      const randomName = crypto.randomBytes(16).toString("hex") + rawExt;
+      const destPath = path.join(uploadDir, randomName);
+
+      file.mv(destPath, (err: any) => {
+        if (err) {
+          console.error("[Upload] Error moving file to destination:", err);
+          return res.status(500).json({ error: "Не удалось сохранить файл на сервере." });
+        }
+
+        res.json({
+          success: true,
+          url: `/uploads/${randomName}`,
+          name: file.name
+        });
+      });
+    } catch (e: any) {
+      console.error("[Upload] Exception during file upload:", e);
+      res.status(500).json({ error: e.message || "Ошибка обработки загрузки файла." });
+    }
   });
 
   // API: Авторизация (Login - возвращает временный токен сессии)

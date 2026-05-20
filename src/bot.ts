@@ -1,4 +1,6 @@
-import { Bot, InlineKeyboard, Keyboard, Context } from "grammy";
+import { Bot, InlineKeyboard, Keyboard, Context, InputFile } from "grammy";
+import fs from "fs";
+import path from "path";
 import { botConfig } from "./botConfig";
 import { sessionManager, UserSession } from "./botSession";
 import { scenarioManager, ScenarioBlock } from "./scenarioManager";
@@ -279,6 +281,64 @@ export class TelegramBotService {
           }
           break;
         }
+        case "file": {
+          if (block.url) {
+            try {
+              if (block.url.startsWith("http://") || block.url.startsWith("https://")) {
+                await ctx.replyWithDocument(block.url, { caption: block.text || "" });
+              } else {
+                let localPath = block.url;
+                if (localPath.startsWith("/")) {
+                  localPath = localPath.substring(1);
+                }
+                const fullPath = path.join(process.cwd(), localPath);
+                if (fs.existsSync(fullPath)) {
+                  await ctx.replyWithDocument(new InputFile(fullPath), { caption: block.text || "" });
+                } else {
+                  await ctx.reply(`[Файл не найден на сервере: ${block.url}]`);
+                }
+              }
+            } catch (err: any) {
+              this.addLog(`Failed to send file ${block.url}: ${err.message || err}`);
+              await ctx.reply(`[Не удалось отправить файл: ${block.url}]`);
+            }
+          } else {
+            await ctx.reply(block.text || "Прикрепленный файл");
+          }
+          if (block.nextBlockId) {
+            await this.executeBlock(ctx, block.nextBlockId, userId);
+          }
+          break;
+        }
+        case "audio": {
+          if (block.url) {
+            try {
+              if (block.url.startsWith("http://") || block.url.startsWith("https://")) {
+                await ctx.replyWithAudio(block.url, { caption: block.text || "" });
+              } else {
+                let localPath = block.url;
+                if (localPath.startsWith("/")) {
+                  localPath = localPath.substring(1);
+                }
+                const fullPath = path.join(process.cwd(), localPath);
+                if (fs.existsSync(fullPath)) {
+                  await ctx.replyWithAudio(new InputFile(fullPath), { caption: block.text || "" });
+                } else {
+                  await ctx.reply(`[Аудиофайл не найден на сервере: ${block.url}]`);
+                }
+              }
+            } catch (err: any) {
+              this.addLog(`Failed to send audio ${block.url}: ${err.message || err}`);
+              await ctx.reply(`[Не удалось отправить аудиофайл: ${block.url}]`);
+            }
+          } else {
+            await ctx.reply(block.text || "Аудиозапись");
+          }
+          if (block.nextBlockId) {
+            await this.executeBlock(ctx, block.nextBlockId, userId);
+          }
+          break;
+        }
         case "link": {
           const label = block.text || "Открыть ссылку";
           const linkKb = new InlineKeyboard().url(label, block.url || "");
@@ -512,56 +572,63 @@ export class TelegramBotService {
         const btn = config.blocks[btnId];
 
         if (btn) {
+          if (!session.checkedButtons) {
+            session.checkedButtons = [];
+          }
+          let checked = [...session.checkedButtons];
+          
+          if (btn.isOnce && checked.includes(btnId)) {
+            await ctx.answerCallbackQuery({ text: "Вы уже выбирали этот вариант 😊", show_alert: true });
+            return;
+          }
+
+          // Toggle check state unless it's one-time
+          if (!checked.includes(btnId)) {
+            checked.push(btnId);
+          } else if (!btn.isOnce) {
+            checked = checked.filter(id => id !== btnId);
+          }
+          
+          sessionManager.updateSession(userId, { checkedButtons: checked });
+
+          // Перерисовываем клавиатуру для всей вертикальной группы
+          try {
+            let startBtn = btn;
+            const allBlocks = Object.values(config.blocks);
+            let foundParent = true;
+            while (foundParent) {
+              const parent = allBlocks.find((b) => b.nextBlockId === startBtn.id && b.type === "button");
+              if (parent) {
+                startBtn = parent;
+              } else {
+                foundParent = false;
+              }
+            }
+
+            const buttonsGroup: ScenarioBlock[] = [];
+            let current: ScenarioBlock | null = startBtn;
+            while (current && current.type === "button") {
+              buttonsGroup.push(current);
+              current = current.nextBlockId ? config.blocks[current.nextBlockId] : null;
+            }
+
+            const btnKb = new InlineKeyboard();
+            buttonsGroup.forEach((b) => {
+              const isCh = checked.includes(b.id);
+              const label = isCh ? `✅ ${b.text}` : b.text;
+              btnKb.text(label, `blk_btn_${b.id}`).row();
+            });
+
+            await ctx.editMessageReplyMarkup({ reply_markup: btnKb });
+          } catch (markupErr) {
+            console.error("[Bot] Failed to update dynamic button checklist:", markupErr);
+          }
+
           await ctx.answerCallbackQuery();
+
           if (btn.rightBlockId) {
             // Кнопка имеет связь вправо — переходим дальше по этой ветви!
             await this.executeBlock(ctx, btn.rightBlockId, userId);
-          } else {
-            // Кнопка без правого продолжения — работает как простой чекбокс-галочка
-            if (!session.checkedButtons) {
-              session.checkedButtons = [];
-            }
-            const checked = [...session.checkedButtons];
-            const idx = checked.indexOf(btnId);
-            if (idx >= 0) {
-              checked.splice(idx, 1);
-            } else {
-              checked.push(btnId);
-            }
-            sessionManager.updateSession(userId, { checkedButtons: checked });
-
-            // Перерисовываем клавиатуру для всей вертикальной группы
-            try {
-              let startBtn = btn;
-              const allBlocks = Object.values(config.blocks);
-              let foundParent = true;
-              while (foundParent) {
-                const parent = allBlocks.find((b) => b.nextBlockId === startBtn.id && b.type === "button");
-                if (parent) {
-                  startBtn = parent;
-                } else {
-                  foundParent = false;
-                }
-              }
-
-              const buttonsGroup: ScenarioBlock[] = [];
-              let current: ScenarioBlock | null = startBtn;
-              while (current && current.type === "button") {
-                buttonsGroup.push(current);
-                current = current.nextBlockId ? config.blocks[current.nextBlockId] : null;
-              }
-
-              const btnKb = new InlineKeyboard();
-              buttonsGroup.forEach((b) => {
-                const isCh = checked.includes(b.id);
-                const label = b.rightBlockId ? b.text : (isCh ? `✅ ${b.text}` : b.text);
-                btnKb.text(label, `blk_btn_${b.id}`).row();
-              });
-
-              await ctx.editMessageReplyMarkup({ reply_markup: btnKb });
-            } catch (markupErr) {
-              console.error("[Bot] Failed to update dynamic button checklist:", markupErr);
-            }
           }
         }
         return;
@@ -596,6 +663,18 @@ export class TelegramBotService {
       checkedButtons: [],
       historyBlocks: []
     });
+
+    const config = scenarioManager.loadConfig();
+
+    if (config.startBlockId && config.blocks[config.startBlockId]) {
+      // Исполняем из конструктора (пользователь хочет все из конструктора)
+      // Оставим Reply меню
+      await ctx.reply("🚀 Запуск...", {
+        reply_markup: this.makeReplyKeyboard(true) // Разблокируем меню сразу, так как старт теперь в конструкторе
+      });
+      await this.executeBlock(ctx, config.startBlockId, userId);
+      return;
+    }
 
     // 2) Отправляем первое приветственное сообщение
     // Прикрепляем Reply-меню (пока только "Старт")
