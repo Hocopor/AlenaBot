@@ -1,0 +1,6 @@
+{
+  "name": "Telegram Bot Alena",
+  "description": "Telegram bot for psychologist Alena - helper and companion with interactive tests, audio guides, exercises, and challenges built on Express with auto-webhook configuration and fallback polling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
