@@ -1238,14 +1238,14 @@ export default function App() {
                           }
                           // Затем последующая цепочка диалога (вниз)
                           if (b.nextBlockId) {
-                            place(b.nextBlockId, Math.max(finalR + 1, currentRow + 1), finalC);
+                            place(b.nextBlockId, finalR + 1, finalC);
                           }
                           // Узел типа menu ветвится на все пункты главного меню
                           if (b.type === 'menu') {
                             let menuC = finalC;
                             scenario.menu.forEach(m => {
                               if (m.startBlockId) {
-                                place(m.startBlockId, Math.max(finalR + 1, currentRow + 1), menuC);
+                                place(m.startBlockId, finalR + 1, menuC);
                                 menuC += 1;
                               }
                             });
@@ -1299,34 +1299,31 @@ export default function App() {
                               
                               {/* ЗАБОР КАНВАСА РИСОВАНИЯ */}
                               <div 
-                                className="flex-1 bg-slate-50 relative overflow-hidden border border-slate-200 rounded-2xl select-none"
+                                className="flex-1 bg-slate-50 relative overflow-hidden border border-slate-200 rounded-2xl select-none touch-none"
                                 style={{ cursor: isDraggingCanvas ? 'grabbing' : 'grab' }}
                                 onMouseDown={handleCanvasMouseDown}
                                 onMouseMove={handleCanvasMouseMove}
                                 onMouseUp={handleCanvasMouseUp}
                                 onMouseLeave={handleCanvasMouseUp}
                                 onWheel={(e) => {
-                                  e.preventDefault();
-                                  setZoom(prevZoom => {
-                                    const newZoom = Math.min(Math.max(0.2, prevZoom - e.deltaY * 0.002), 2);
-                                    if (newZoom === prevZoom) return prevZoom;
-                                    
-                                    const rect = e.currentTarget.getBoundingClientRect();
-                                    const mouseX = e.clientX - rect.left;
-                                    const mouseY = e.clientY - rect.top;
+                                  // Предотвращаем стандартный скролл страницы
+                                  const rect = e.currentTarget.getBoundingClientRect();
+                                  const mouseX = e.clientX - rect.left;
+                                  const mouseY = e.clientY - rect.top;
 
-                                    setPan(prevPan => {
-                                      const canvasX = (mouseX - prevPan.x) / prevZoom;
-                                      const canvasY = (mouseY - prevPan.y) / prevZoom;
+                                  const zoomDelta = e.deltaY * -0.002;
+                                  const newZoom = Math.min(Math.max(0.2, zoom + zoomDelta), 2);
+                                  
+                                  if (newZoom !== zoom) {
+                                    const canvasX = (mouseX - pan.x) / zoom;
+                                    const canvasY = (mouseY - pan.y) / zoom;
 
-                                      return {
-                                        x: mouseX - canvasX * newZoom,
-                                        y: mouseY - canvasY * newZoom
-                                      };
+                                    setPan({
+                                      x: mouseX - canvasX * newZoom,
+                                      y: mouseY - canvasY * newZoom
                                     });
-                                    
-                                    return newZoom;
-                                  });
+                                    setZoom(newZoom);
+                                  }
                                 }}
                               >
                                 {/* Фоновая Miro-сетка из точек */}

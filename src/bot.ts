@@ -275,9 +275,35 @@ export class TelegramBotService {
 
       switch (block.type) {
         case "text": {
-          await ctx.reply(block.text, { parse_mode: "HTML" });
-          if (block.nextBlockId) {
-            await this.executeBlock(ctx, block.nextBlockId, userId);
+          if (block.nextBlockId && config.blocks[block.nextBlockId] && config.blocks[block.nextBlockId].type === "button") {
+            // Attach inline buttons directly to this text
+            const buttonsGroup: ScenarioBlock[] = [];
+            let current: ScenarioBlock | null = config.blocks[block.nextBlockId];
+            while (current && current.type === "button") {
+              buttonsGroup.push(current);
+              current = current.nextBlockId ? config.blocks[current.nextBlockId] : null;
+            }
+
+            const btnKb = new InlineKeyboard();
+            buttonsGroup.forEach((btn) => {
+              const customText = btn.text || '';
+              const isChecked = session.checkedButtons?.includes(btn.id);
+              const label = btn.url ? customText : (btn.rightBlockId ? customText : (isChecked ? `✅ ${customText}` : customText));
+              
+              if (btn.url) {
+                btnKb.url(label, btn.url).row();
+              } else {
+                btnKb.text(label, `blk_btn_${btn.id}`).row();
+              }
+            });
+
+            await ctx.reply(block.text, { parse_mode: "HTML", reply_markup: btnKb });
+            // We do NOT execute nextBlockId here because it's a button and buttons wait for user click.
+          } else {
+            await ctx.reply(block.text, { parse_mode: "HTML" });
+            if (block.nextBlockId) {
+              await this.executeBlock(ctx, block.nextBlockId, userId);
+            }
           }
           break;
         }
@@ -392,7 +418,7 @@ export class TelegramBotService {
           break;
         }
         case "button": {
-          // Находим все кнопки в вертикальной последовательности для группировки в один Inline Keyboard
+          // Fallback if button is executed directly without a text block
           const buttonsGroup: ScenarioBlock[] = [];
           let current: ScenarioBlock | null = block;
           while (current && current.type === "button") {
@@ -403,8 +429,14 @@ export class TelegramBotService {
           const btnKb = new InlineKeyboard();
           buttonsGroup.forEach((btn) => {
             const isChecked = session.checkedButtons?.includes(btn.id);
-            const label = btn.rightBlockId ? btn.text : (isChecked ? `✅ ${btn.text}` : btn.text);
-            btnKb.text(label, `blk_btn_${btn.id}`).row();
+            const customText = btn.text || '';
+            const label = btn.url ? customText : (btn.rightBlockId ? customText : (isChecked ? `✅ ${customText}` : customText));
+            
+            if (btn.url) {
+              btnKb.url(label, btn.url).row();
+            } else {
+              btnKb.text(label, `blk_btn_${btn.id}`).row();
+            }
           });
 
           await ctx.reply("Выберите нужный вариант 👇", { reply_markup: btnKb });
@@ -589,7 +621,14 @@ export class TelegramBotService {
             checked = checked.filter(id => id !== btnId);
           }
           
-          sessionManager.updateSession(userId, { checkedButtons: checked });
+          sessionManager.updateSession(userId, { checkedButtons: checked, menuUnlocked: true });
+
+          // Если меню только что разблокировалось, обновим Reply Keyboard (отправив уведомление один раз)
+          if (!session.menuUnlocked) {
+             await ctx.reply("Доступно новое меню поддержки. Внизу экрана появилась кнопка «Вернуться в меню» 🤍", {
+               reply_markup: this.makeReplyKeyboard(true)
+             });
+          }
 
           // Перерисовываем клавиатуру для всей вертикальной группы
           try {
@@ -615,8 +654,14 @@ export class TelegramBotService {
             const btnKb = new InlineKeyboard();
             buttonsGroup.forEach((b) => {
               const isCh = checked.includes(b.id);
-              const label = isCh ? `✅ ${b.text}` : b.text;
-              btnKb.text(label, `blk_btn_${b.id}`).row();
+              const customText = b.text || '';
+              const label = b.url ? customText : (b.rightBlockId ? customText : (isCh ? `✅ ${customText}` : customText));
+              
+              if (b.url) {
+                btnKb.url(label, b.url).row();
+              } else {
+                btnKb.text(label, `blk_btn_${b.id}`).row();
+              }
             });
 
             await ctx.editMessageReplyMarkup({ reply_markup: btnKb });
@@ -667,11 +712,9 @@ export class TelegramBotService {
     const config = scenarioManager.loadConfig();
 
     if (config.startBlockId && config.blocks[config.startBlockId]) {
-      // Исполняем из конструктора (пользователь хочет все из конструктора)
-      // Оставим Reply меню
-      await ctx.reply("🚀 Запуск...", {
-        reply_markup: this.makeReplyKeyboard(true) // Разблокируем меню сразу, так как старт теперь в конструкторе
-      });
+      // Отправляем системное сообщение для установки Reply Keyboard
+      const kb = this.makeReplyKeyboard(false);
+      await ctx.reply("Перезапуск бота...", { reply_markup: kb });
       await this.executeBlock(ctx, config.startBlockId, userId);
       return;
     }
