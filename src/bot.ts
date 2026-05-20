@@ -49,11 +49,11 @@ export class TelegramBotService {
 
     try {
       this.bot = new Bot(token);
+      await this.bot.init(); // Инициализируем botInfo внутри grammY, чтобы вебхуки работали без ошибок
       this.setupHandlers();
       this.addLog("Bot handlers configured successfully.");
 
-      // Получаем информацию о боте для верификации токена
-      const botInfo = await this.bot.api.getMe();
+      const botInfo = this.bot.botInfo;
       this.addLog(`Access verified. Bot username is @${botInfo.username}`);
 
       // Автоматическая первоначальная настройка описания и команд бота в Telegram
