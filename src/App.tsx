@@ -50,12 +50,27 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   
+  // Авторизационные токены админа
+  const [authToken, setAuthToken] = useState<string | null>(localStorage.getItem("alena_admin_token"));
+  const [adminUser, setAdminUser] = useState<string | null>(localStorage.getItem("alena_admin_user"));
+
+  // Форма входа
+  const [usernameInput, setUsernameInput] = useState("");
+  const [passwordInput, setPasswordInput] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
+
   // Поля ввода для настройки на лету
   const [tokenInput, setTokenInput] = useState("");
   const [appUrlInput, setAppUrlInput] = useState("");
   const [showConfigModal, setShowConfigModal] = useState(false);
   const [savingConfig, setSavingConfig] = useState(false);
   const [configSuccessMessage, setConfigSuccessMessage] = useState("");
+
+  // Поля для генерации крипто-хэша SHA-256
+  const [hashPasswordInput, setHashPasswordInput] = useState("");
+  const [hashResult, setHashResult] = useState<{ salt: string; hash: string; instructions: string } | null>(null);
+  const [generatingHash, setGeneratingHash] = useState(false);
 
   // Выбор активной вкладки
   const [activeTab, setActiveTab] = useState<"dashboard" | "sessions" | "logs" | "guide">("dashboard");
@@ -69,18 +84,94 @@ export default function App() {
     setTimeout(() => setCopiedText(""), 2200);
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("alena_admin_token");
+    localStorage.removeItem("alena_admin_user");
+    setAuthToken(null);
+    setAdminUser(null);
+    setStatus(null);
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError("");
+    setLoggingIn(true);
+    try {
+      const res = await fetch("/api/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: usernameInput,
+          password: passwordInput
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        localStorage.setItem("alena_admin_token", data.token);
+        localStorage.setItem("alena_admin_user", data.username);
+        setAuthToken(data.token);
+        setAdminUser(data.username);
+        setPasswordInput("");
+        setLoginError("");
+      } else {
+        setLoginError(data.error || "Неверный логин или пароль");
+      }
+    } catch (err: any) {
+      setLoginError(`Ошибка соединения: ${err.message || err}`);
+    } finally {
+      setLoggingIn(false);
+    }
+  };
+
+  const handleGenerateHash = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!hashPasswordInput) return;
+    setGeneratingHash(true);
+    setHashResult(null);
+    try {
+      const res = await fetch("/api/generate-hash", {
+        method: "POST",
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${authToken}`
+        },
+        body: JSON.stringify({ password: hashPasswordInput })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setHashResult(data);
+      } else {
+        alert(data.error || "Ошибка генерации хэша");
+      }
+    } catch (err: any) {
+      alert(`Сбой при шифровании: ${err.message || err}`);
+    } finally {
+      setGeneratingHash(false);
+    }
+  };
+
   const fetchData = async (silent = false) => {
+    if (!authToken) return;
     if (!silent) setLoading(true);
     else setRefreshing(true);
     
     try {
-      const statusRes = await fetch("/api/bot-status");
+      const headers = { "Authorization": `Bearer ${authToken}` };
+      const statusRes = await fetch("/api/bot-status", { headers });
+      
+      if (statusRes.status === 401) {
+        handleLogout();
+        return;
+      }
+      
       const statusData = await statusRes.json();
       setStatus(statusData);
 
-      const logsRes = await fetch("/api/bot-logs");
-      const logsData = await logsRes.json();
-      setLogs(logsData.logs || []);
+      const logsRes = await fetch("/api/bot-logs", { headers });
+      if (logsRes.ok) {
+        const logsData = await logsRes.json();
+        setLogs(logsData.logs || []);
+      }
     } catch (e) {
       console.error("Failed to fetch server state details:", e);
     } finally {
@@ -90,15 +181,14 @@ export default function App() {
   };
 
   useEffect(() => {
-    fetchData();
-
-    // Включаем фоновый опрос раз в 4 секунды для проверки обновлений/логов
-    const interval = setInterval(() => {
-      fetchData(true);
-    }, 4000);
-
-    return () => clearInterval(interval);
-  }, []);
+    if (authToken) {
+      fetchData();
+      const interval = setInterval(() => {
+        fetchData(true);
+      }, 4000);
+      return () => clearInterval(interval);
+    }
+  }, [authToken]);
 
   const handleUpdateConfig = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -107,18 +197,29 @@ export default function App() {
     try {
       const res = await fetch("/api/bot-restart", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { 
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${authToken}`
+        },
         body: JSON.stringify({
           token: tokenInput,
           appUrl: appUrlInput
         })
       });
+      
+      if (res.status === 401) {
+        handleLogout();
+        return;
+      }
+
       const data = await res.json();
       if (data.success) {
         setConfigSuccessMessage(`Бот перезапущен! Режим работы: ${data.mode === "webhook" ? "Вебхук" : "Длинный опрос (polling)"}`);
         setTimeout(() => {
           setShowConfigModal(false);
           setConfigSuccessMessage("");
+          setHashResult(null);
+          setHashPasswordInput("");
         }, 3000);
         fetchData();
       } else {
@@ -165,6 +266,87 @@ export default function App() {
     return score;
   };
 
+  if (!authToken) {
+    return (
+      <div className="min-h-screen bg-slate-100 flex flex-col justify-center py-12 sm:px-6 lg:px-8 font-sans antialiased selection:bg-emerald-500 selection:text-white">
+        <div className="sm:mx-auto sm:w-full sm:max-w-md text-center">
+          <div className="inline-flex p-3 bg-emerald-50 text-emerald-600 rounded-2xl border border-emerald-100/85 mb-4 shadow-xs">
+            <Bot className="h-10 w-10 text-emerald-600" />
+          </div>
+          <h2 className="text-3xl font-bold tracking-tight text-slate-900">
+            Вход в панель управления
+          </h2>
+          <p className="mt-2 text-xs text-slate-500 max-w-sm mx-auto leading-relaxed">
+            Авторизуйтесь, чтобы управлять Telegram-ботом <strong className="text-slate-800">СоПутница Алёна</strong>, отслеживать сессии клиентов и просматривать логи сервера.
+          </p>
+        </div>
+
+        <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
+          <div className="bg-white py-8 px-4 border border-slate-200/90 shadow-md sm:rounded-2xl sm:px-10">
+            <form className="space-y-6" onSubmit={handleLogin}>
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
+                  Имя пользователя (Логин)
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={usernameInput}
+                  onChange={(e) => setUsernameInput(e.target.value)}
+                  placeholder="Например, admin"
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-400 focus:outline-none transition-all"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wider mb-2">
+                  Защитный пароль
+                </label>
+                <input
+                  type="password"
+                  required
+                  value={passwordInput}
+                  onChange={(e) => setPasswordInput(e.target.value)}
+                  placeholder="Ваш пароль администратора"
+                  className="w-full px-3.5 py-2.5 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-emerald-400 focus:outline-none transition-all"
+                />
+                <p className="text-[10px] text-slate-400 mt-2 leading-relaxed">
+                  Если вы не задавали или не хэшировали пароль в <code>.env</code>, сервер сгенерировал случайный временный токен в консоли Docker/Ubuntu. Проверьте логи Docker или systemd.
+                </p>
+              </div>
+
+              {loginError && (
+                <div className="p-3 bg-rose-50/70 border border-rose-100 rounded-xl text-[11px] text-rose-800 font-semibold leading-relaxed">
+                  ⚠️ {loginError}
+                </div>
+              )}
+
+              <div>
+                <button
+                  type="submit"
+                  disabled={loggingIn}
+                  className="w-full flex justify-center py-2.5 px-4 border border-transparent rounded-xl shadow-xs text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-emerald-500 transition-colors cursor-pointer"
+                >
+                  {loggingIn ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Войти в консоль"
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+          
+          <div className="mt-6 text-center">
+            <span className="text-[10px] font-mono select-none px-3 py-1 bg-slate-200/50 rounded-full text-slate-500 border border-slate-300/40">
+              SECURE ADMIN MODULE V1.2 (SSL Verified)
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans antialiased">
       {/* Шапка админ-панели */}
@@ -182,10 +364,15 @@ export default function App() {
             </div>
 
             <div className="flex items-center space-x-2">
+              <span className="hidden md:inline-flex items-center px-2 py-0.5 bg-slate-100 text-slate-600 text-xs font-semibold rounded-md border border-slate-200 mr-2">
+                <Shield className="h-3 w-3 mr-1 text-slate-500" />
+                Логин: {adminUser || "admin"}
+              </span>
+
               <button 
                 onClick={() => fetchData()}
                 disabled={loading || refreshing}
-                className="inline-flex items-center px-3 py-1.5 border border-slate-200 text-xs font-semibold rounded-lg bg-white hover:bg-slate-50 text-slate-600 focus:outline-none transition-all duration-200"
+                className="inline-flex items-center px-3 py-1.5 border border-slate-200 text-xs font-semibold rounded-lg bg-white hover:bg-slate-50 text-slate-600 focus:outline-none transition-all duration-200 cursor-pointer"
               >
                 <RefreshCw className={`h-3 w-3 mr-1.5 ${refreshing || loading ? "animate-spin" : ""}`} />
                 {refreshing ? "Обновление..." : "Обновить"}
@@ -193,10 +380,17 @@ export default function App() {
               
               <button 
                 onClick={openConfigModal}
-                className="inline-flex items-center px-3 py-1.5 border border-emerald-200 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm focus:outline-none transition-all duration-200"
+                className="inline-flex items-center px-3 py-1.5 border border-emerald-200 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm focus:outline-none transition-all duration-200 cursor-pointer"
               >
                 <Settings className="h-3.5 w-3.5 mr-1.5" />
                 Настройка API
+              </button>
+
+              <button 
+                onClick={handleLogout}
+                className="inline-flex items-center px-3 py-1.5 border border-rose-200 text-xs font-semibold rounded-lg bg-white hover:bg-rose-50 text-rose-600 focus:outline-none transition-all duration-200 cursor-pointer"
+              >
+                Выйти
               </button>
             </div>
           </div>
@@ -821,7 +1015,7 @@ dashboard.domain.com {
       {/* Окно/модалка для настройки API токенов и домена */}
       {showConfigModal && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-md w-full overflow-hidden">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-xl max-w-lg w-full overflow-hidden">
             <div className="px-6 py-4 bg-slate-50 border-b border-slate-200/60 flex justify-between items-center">
               <h3 className="font-bold text-slate-900 text-sm">Панель настройки бота</h3>
               <button 
@@ -832,65 +1026,120 @@ dashboard.domain.com {
               </button>
             </div>
 
-            <form onSubmit={handleUpdateConfig} className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">
-                  Токен Telegram от @BotFather:
-                </label>
-                <input 
-                  type="password"
-                  placeholder="Вставьте токен (например: 123456:ABC-DEF...)"
-                  value={tokenInput}
-                  onChange={(e) => setTokenInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-emerald-400 focus:outline-none"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Оставьте пустым, если не хотите менять записанный токен.</p>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">
-                  Доверенный Домен (APP_URL с HTTPS):
-                </label>
-                <input 
-                  type="url"
-                  placeholder="https://ваш-домен.ru"
-                  value={appUrlInput}
-                  onChange={(e) => setAppUrlInput(e.target.value)}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-emerald-400 focus:outline-none"
-                />
-                <p className="text-[10px] text-slate-400 mt-1">Используется для автоподключения безопасных вебхуков.</p>
-              </div>
-
-              {configSuccessMessage && (
-                <div className={`p-3 rounded-lg text-xs font-semibold ${
-                  configSuccessMessage.includes("Ошибка") ? "bg-rose-50 text-rose-800 border-rose-100" : "bg-emerald-50 text-emerald-800 border-emerald-100"
-                } border`}>
-                  {configSuccessMessage}
+            <div className="divide-y divide-slate-100 max-h-[82vh] overflow-y-auto">
+              {/* Форма изменения токена и домена */}
+              <form onSubmit={handleUpdateConfig} className="p-6 space-y-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">
+                    Токен Telegram от @BotFather:
+                  </label>
+                  <input 
+                    type="password"
+                    placeholder="Вставьте токен (например: 123456:ABC-DEF...)"
+                    value={tokenInput}
+                    onChange={(e) => setTokenInput(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-emerald-400 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1 font-sans">Оставьте пустым, если не хотите менять записанный токен.</p>
                 </div>
-              )}
 
-              <div className="flex justify-end space-x-2 pt-2">
-                <button 
-                  type="button"
-                  onClick={() => setShowConfigModal(false)}
-                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg cursor-pointer"
-                >
-                  Отмена
-                </button>
-                <button 
-                  type="submit"
-                  disabled={savingConfig}
-                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs flex items-center cursor-pointer"
-                >
-                  {savingConfig ? (
-                    <>
-                      <RefreshCw className="h-3 w-3 animate-spin mr-1.5" />
-                      Перезапуск...
-                    </>
-                  ) : "Применить и перезапустить"}
-                </button>
+                <div>
+                  <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">
+                    Доверенный Домен (APP_URL с HTTPS):
+                  </label>
+                  <input 
+                    type="url"
+                    placeholder="https://ваш-домен.ru"
+                    value={appUrlInput}
+                    onChange={(e) => setAppUrlInput(e.target.value)}
+                    className="w-full px-3 py-2 border border-slate-300 rounded-lg text-xs font-mono focus:ring-2 focus:ring-emerald-400 focus:outline-none"
+                  />
+                  <p className="text-[10px] text-slate-400 mt-1 font-sans">Используется для автоподключения безопасных вебхуков.</p>
+                </div>
+
+                {configSuccessMessage && (
+                  <div className={`p-3 rounded-lg text-xs font-semibold ${
+                    configSuccessMessage.includes("Ошибка") ? "bg-rose-50 text-rose-800 border-rose-100" : "bg-emerald-50 text-emerald-800 border-emerald-100"
+                  } border`}>
+                    {configSuccessMessage}
+                  </div>
+                )}
+
+                <div className="flex justify-end space-x-2 pt-2">
+                  <button 
+                    type="button"
+                    onClick={() => setShowConfigModal(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg cursor-pointer"
+                  >
+                    Отмена
+                  </button>
+                  <button 
+                    type="submit"
+                    disabled={savingConfig}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-xs flex items-center cursor-pointer"
+                  >
+                    {savingConfig ? (
+                      <>
+                        <RefreshCw className="h-3 w-3 animate-spin mr-1.5" />
+                        Перезапуск...
+                      </>
+                    ) : "Применить и перезапустить"}
+                  </button>
+                </div>
+              </form>
+
+              {/* Модуль шифрования/хэширования паролей */}
+              <div className="p-6 bg-slate-50/50 space-y-3">
+                <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide flex items-center">
+                  <Shield className="h-3.5 w-3.5 text-slate-500 mr-1.5" />
+                  🔐 Инструмент безопасного шифрования (Хэш/Соль)
+                </h4>
+                <p className="text-[11px] text-slate-500 leading-relaxed font-sans">
+                  Хотите скрыть пароль в <code>.env</code>? Введите желаемый пароль администратора, чтобы мгновенно сгенерировать крипто-хэш SHA-256 с солью, полностью исключая хранение в открытом виде:
+                </p>
+                
+                <div className="flex space-x-2">
+                  <input 
+                    type="password"
+                    placeholder="Ваш новый пароль"
+                    value={hashPasswordInput}
+                    onChange={(e) => setHashPasswordInput(e.target.value)}
+                    className="w-full px-3 py-1.5 border border-slate-300 rounded-lg text-xs focus:ring-2 focus:ring-emerald-400 focus:outline-none"
+                  />
+                  <button 
+                    type="button"
+                    onClick={handleGenerateHash}
+                    disabled={generatingHash}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold rounded-lg transition-colors whitespace-nowrap cursor-pointer"
+                  >
+                    {generatingHash ? "Шифруем..." : "Получить Хэш"}
+                  </button>
+                </div>
+
+                {hashResult && (
+                  <div className="mt-3 p-3 bg-slate-900 text-slate-300 rounded-xl space-y-2 border border-slate-950">
+                    <div className="space-y-1">
+                      <div className="flex justify-between items-center">
+                        <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Параметры для файла .env:</p>
+                        <button
+                          onClick={() => copyToClipboard(`ADMIN_PASSWORD_HASH="${hashResult.hash}"\nADMIN_PASSWORD_SALT="${hashResult.salt}"`, "hash")}
+                          className="text-[10px] text-slate-400 hover:text-emerald-400"
+                        >
+                          {copiedText === "hash" ? "Скопировано!" : "Копировать"}
+                        </button>
+                      </div>
+                      <div className="bg-slate-950 p-2 rounded text-[10px] font-mono overflow-x-auto select-all leading-normal whitespace-pre">
+{`ADMIN_PASSWORD_HASH="${hashResult.hash}"
+ADMIN_PASSWORD_SALT="${hashResult.salt}"`}
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-slate-400 leading-normal font-sans">
+                      Добавьте эти строки в ваш <code>.env</code> файл на сервере и удалите строчку <code>ADMIN_PASSWORD="..."</code>. При перезапуске служба будет проверять только хэш.
+                    </p>
+                  </div>
+                )}
               </div>
-            </form>
+            </div>
           </div>
         </div>
       )}
