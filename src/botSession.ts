@@ -17,11 +17,6 @@ export interface UserSession {
   // Доступ к полному меню (Reply "Вернуться в меню")
   menuUnlocked: boolean;
   
-  // Состояния динамического конструктора сценариев
-  checkedButtons?: string[];
-  historyBlocks?: string[];
-  triggeredWaitBlocks?: string[];
-  
   // Таймеры / Мьютексы для отложенных отправлений
   lastStartTimestamp: number; // Время последнего клика по /start
 }

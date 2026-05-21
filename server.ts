@@ -1,6 +1,5 @@
 import express from "express";
 import path from "path";
-import fileUpload from "express-fileupload";
 import fs from "fs";
 import crypto from "crypto";
 import dotenv from "dotenv";
@@ -8,7 +7,6 @@ import { createServer as createViteServer } from "vite";
 import { telegramBotService } from "./src/bot";
 import { sessionManager } from "./src/botSession";
 import { botConfig } from "./src/botConfig";
-import { scenarioManager } from "./src/scenarioManager";
 
 // Инициализируем переменные окружения из .env файла
 dotenv.config();
@@ -21,9 +19,9 @@ async function startServer() {
   const activeSessions = new Map<string, { username: string; expires: number }>();
 
   // Загружаем конфиг безопасности из переменных окружения
-  let adminUsername = process.env.ADMIN_USERNAME || "admin";
-  let adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
-  let adminPasswordSalt = process.env.ADMIN_PASSWORD_SALT || "alena_default_salt";
+  const adminUsername = process.env.ADMIN_USERNAME || "admin";
+  const adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
+  const adminPasswordSalt = process.env.ADMIN_PASSWORD_SALT || "alena_default_salt";
   let adminPlaintextPassword = process.env.ADMIN_PASSWORD;
 
   // Если в .env нет ни хэша, ни пароля, автоматически генерируем безопасный временный пароль
@@ -62,21 +60,14 @@ async function startServer() {
   // Telegram API отправляет обновления в формате JSON, поэтому нам обязательно нужен парсер
   app.use(express.json());
 
-  // Разрешаем загрузку файлов во временную папку
-  app.use(fileUpload({
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
-    useTempFiles: true,
-    tempFileDir: "/tmp/"
-  }));
-
-  // Раздача статических медиафайлов/документов, загруженных админами
-  app.use("/uploads", express.static(path.join(process.cwd(), "uploads")));
-
-  // Логгирование входящих HTTP запросов (только ошибки >= 400)
+  // Логгирование входящих HTTP запросов (только ошибки >= 400 и важные изменяющие действия POST/PUT/DELETE)
   app.use((req, res, next) => {
     res.on("finish", () => {
       if (res.statusCode >= 400) {
         console.error(`[HTTP ${res.statusCode}] ${req.method} ${req.path}`);
+      } else if (req.method !== "GET" && req.path !== "/api/telegram-webhook") {
+        // Фиксируем важные управляющие действия (например, авторизация или перезапуск бота)
+        console.log(`[HTTP ${res.statusCode}] ${req.method} ${req.path}`);
       }
     });
     next();
@@ -96,45 +87,6 @@ async function startServer() {
   // API: Здоровье сервера
   app.get("/api/health", (req, res) => {
     res.json({ status: "ok", time: new Date().toISOString() });
-  });
-
-  // API: Загрузка файлов и аудио для блоков конструктора сценариев (Защищено)
-  app.post("/api/upload", checkAuth, (req: any, res) => {
-    try {
-      if (!req.files || Object.keys(req.files).length === 0) {
-        return res.status(400).json({ error: "Файл не передан." });
-      }
-
-      const fileKey = Object.keys(req.files)[0];
-      const uploadedFile = req.files[fileKey];
-      const file = Array.isArray(uploadedFile) ? uploadedFile[0] : uploadedFile;
-
-      const uploadDir = path.join(process.cwd(), "uploads");
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-
-      // Генерация уникального случайного имени
-      const rawExt = path.extname(file.name);
-      const randomName = crypto.randomBytes(16).toString("hex") + rawExt;
-      const destPath = path.join(uploadDir, randomName);
-
-      file.mv(destPath, (err: any) => {
-        if (err) {
-          console.error("[Upload] Error moving file to destination:", err);
-          return res.status(500).json({ error: "Не удалось сохранить файл на сервере." });
-        }
-
-        res.json({
-          success: true,
-          url: `/uploads/${randomName}`,
-          name: file.name
-        });
-      });
-    } catch (e: any) {
-      console.error("[Upload] Exception during file upload:", e);
-      res.status(500).json({ error: e.message || "Ошибка обработки загрузки файла." });
-    }
   });
 
   // API: Авторизация (Login - возвращает временный токен сессии)
@@ -223,178 +175,6 @@ async function startServer() {
       });
     } catch (e: any) {
       res.status(500).json({ error: e.message || "Failed to load bot status" });
-    }
-  });
-
-  // API: Получить текущий живой сценарий
-  app.get("/api/scenario", checkAuth, (req, res) => {
-    try {
-      const config = scenarioManager.loadConfig();
-      res.json(config);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message || "Failed to load live scenario" });
-    }
-  });
-
-  // API: Получить черновик сценария
-  app.get("/api/scenario/draft", checkAuth, (req, res) => {
-    try {
-      const draft = scenarioManager.loadDraft();
-      if (draft) {
-        res.json({ draft, hasDraft: true });
-      } else {
-        const config = scenarioManager.loadConfig();
-        res.json({ draft: config, hasDraft: false });
-      }
-    } catch (e: any) {
-      res.status(500).json({ error: e.message || "Failed to load scenario draft" });
-    }
-  });
-
-  // API: Сохранить черновик сценария
-  app.post("/api/scenario/draft", checkAuth, (req, res) => {
-    try {
-      scenarioManager.saveDraft(req.body);
-      res.json({ success: true });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message || "Failed to save scenario draft" });
-    }
-  });
-
-  // API: Сбросить/Удалить черновик
-  app.delete("/api/scenario/draft", checkAuth, (req, res) => {
-    try {
-      scenarioManager.deleteDraft();
-      res.json({ success: true });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message || "Failed to discard draft" });
-    }
-  });
-
-  // API: Опубликовать (деплоить) сценарий на боевой
-  app.post("/api/scenario/deploy", checkAuth, async (req, res) => {
-    try {
-      const draft = scenarioManager.loadDraft();
-      if (!draft) {
-        return res.status(400).json({ error: "Черновик для публикации не найден." });
-      }
-
-      // Валидируем
-      const validation = scenarioManager.validateConfig(draft);
-      if (!validation.isValid) {
-        return res.status(400).json({ error: "Невозможно опубликовать невалидный сценарий", errors: validation.errors });
-      }
-
-      // Сохраняем как рабочий конфиг
-      scenarioManager.saveConfig(draft);
-
-      // Синхронизируем с конфигурацией для совместимости
-      if (draft.telegramBotToken) {
-        process.env.TELEGRAM_BOT_TOKEN = draft.telegramBotToken;
-      }
-      if (draft.contactLink) {
-        botConfig.contactLink = draft.contactLink;
-      }
-
-      // Перезапускаем бота программно! Бот горячо перезапустится на лету
-      console.log("[Deploy] Activating new dynamic scenario config and reloading telegramBotService...");
-      const restartResult = await telegramBotService.start();
-
-      // Удаляем черновик после успешного деплоя
-      scenarioManager.deleteDraft();
-
-      res.json({ success: true, botRestart: restartResult });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message || "Failed to deploy scenario config" });
-    }
-  });
-
-  // API: Валидация сценария перед отправкой
-  app.post("/api/scenario/validate", checkAuth, (req, res) => {
-    try {
-      const validation = scenarioManager.validateConfig(req.body);
-      res.json(validation);
-    } catch (e: any) {
-      res.status(500).json({ error: e.message || "Failed to validate scenario schema" });
-    }
-  });
-
-  // API: Список ошибок логирования сценариев
-  app.get("/api/error-logs", checkAuth, (req, res) => {
-    try {
-      res.json({ errors: scenarioManager.getErrorLogs() });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message || "Failed to load error logs" });
-    }
-  });
-
-  // API: Смена глобальных настроек (пароли, контакты и т.д.)
-  app.post("/api/settings", checkAuth, (req, res) => {
-    try {
-      const { newPassword, contactLink, telegramBotToken } = req.body;
-      const currentLive = scenarioManager.loadConfig();
-
-      if (contactLink) {
-        currentLive.contactLink = contactLink;
-        botConfig.contactLink = contactLink;
-      }
-      if (telegramBotToken) {
-        currentLive.telegramBotToken = telegramBotToken;
-        process.env.TELEGRAM_BOT_TOKEN = telegramBotToken;
-      }
-
-      scenarioManager.saveConfig(currentLive);
-
-      // Смена пароля администратора
-      if (newPassword) {
-        const salt = crypto.randomBytes(16).toString("hex");
-        const hash = hashPassword(newPassword, salt);
-
-        // Прописываем новые значения хеша в `.env`
-        try {
-          const envPath = path.join(process.cwd(), ".env");
-          let envContent = "";
-          if (fs.existsSync(envPath)) {
-            envContent = fs.readFileSync(envPath, "utf-8");
-          }
-
-          const lines = envContent.split("\n");
-          const updatedLines = [];
-          let hashFound = false;
-          let saltFound = false;
-
-          for (let line of lines) {
-            const trimL = line.trim();
-            if (trimL.startsWith("ADMIN_PASSWORD_HASH")) {
-              updatedLines.push(`ADMIN_PASSWORD_HASH="${hash}"`);
-              hashFound = true;
-            } else if (trimL.startsWith("ADMIN_PASSWORD_SALT")) {
-              updatedLines.push(`ADMIN_PASSWORD_SALT="${salt}"`);
-              saltFound = true;
-            } else if (trimL.startsWith("ADMIN_PASSWORD=")) {
-              // Игнорируем исходный открытый пароль в пользу хеша
-            } else {
-              updatedLines.push(line);
-            }
-          }
-
-          if (!hashFound) updatedLines.push(`ADMIN_PASSWORD_HASH="${hash}"`);
-          if (!saltFound) updatedLines.push(`ADMIN_PASSWORD_SALT="${salt}"`);
-
-          fs.writeFileSync(envPath, updatedLines.join("\n"), "utf-8");
-
-          // Обновляем текущие переменные в памяти сервера
-          adminPasswordHash = hash;
-          adminPasswordSalt = salt;
-          adminPlaintextPassword = undefined;
-        } catch (envErr) {
-          console.error("Failed to write password hash to .env: ", envErr);
-        }
-      }
-
-      res.json({ success: true });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message || "Failed to update settings" });
     }
   });
 
