@@ -247,7 +247,7 @@ export class TelegramBotService {
   /**
    * Запуск выполнения сценария по блокам
    */
-  public async executeBlock(ctx: any, blockId: string | null | undefined, userId: number) {
+  public async executeBlock(ctx: any, blockId: string | null | undefined, userId: number, isStartBlock: boolean = false) {
     if (!blockId) return;
 
     try {
@@ -275,6 +275,16 @@ export class TelegramBotService {
 
       switch (block.type) {
         case "text": {
+          if (block.isMenuUnlock) {
+            const currentSession = sessionManager.getSession(userId);
+            if (!currentSession.menuUnlocked) {
+              sessionManager.updateSession(userId, { menuUnlocked: true });
+              await ctx.reply("Доступно новое меню поддержки. Внизу экрана появилась кнопка «Вернуться в меню» 🤍", {
+                reply_markup: this.makeReplyKeyboard(true)
+              });
+            }
+          }
+
           if (block.nextBlockId && config.blocks[block.nextBlockId] && config.blocks[block.nextBlockId].type === "button") {
             // Attach inline buttons directly to this text
             const buttonsGroup: ScenarioBlock[] = [];
@@ -300,7 +310,11 @@ export class TelegramBotService {
             await ctx.reply(block.text, { parse_mode: "HTML", reply_markup: btnKb });
             // We do NOT execute nextBlockId here because it's a button and buttons wait for user click.
           } else {
-            await ctx.reply(block.text, { parse_mode: "HTML" });
+            const extraOpts: any = { parse_mode: "HTML" };
+            if (isStartBlock) {
+              extraOpts.reply_markup = this.makeReplyKeyboard(session.menuUnlocked || false);
+            }
+            await ctx.reply(block.text, extraOpts);
             if (block.nextBlockId) {
               await this.executeBlock(ctx, block.nextBlockId, userId);
             }
@@ -612,9 +626,7 @@ export class TelegramBotService {
       // Общий возврат в меню по инлайн-кнопке (gomenu)
       if (data === "gomenu") {
         await ctx.answerCallbackQuery();
-        await ctx.reply(botConfig.texts.backToMenuHeader, {
-          reply_markup: this.makeMainMenuKeyboard()
-        });
+        await this.handleReturnToMenu(ctx);
         return;
       }
 
@@ -783,10 +795,7 @@ export class TelegramBotService {
     const config = scenarioManager.loadConfig();
 
     if (config.startBlockId && config.blocks[config.startBlockId]) {
-      // Отправляем системное сообщение для установки Reply Keyboard
-      const kb = this.makeReplyKeyboard(false);
-      await ctx.reply("Перезапуск бота...", { reply_markup: kb });
-      await this.executeBlock(ctx, config.startBlockId, userId);
+      await this.executeBlock(ctx, config.startBlockId, userId, true);
       return;
     }
 

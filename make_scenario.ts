@@ -71,7 +71,8 @@ const config: ScenarioConfig = {
       id: "welcome_final",
       type: "text",
       text: "Слышу тебя 🩶\nВсё это — не слабость и не лень. Это сигнал. Тело и душа просят опоры.\nВыбери, с чего хочешь начать ⬇️",
-      nextBlockId: "nav_btn_1"
+      nextBlockId: "nav_btn_1",
+      isMenuUnlock: true
     },
     "nav_btn_1": { id: "nav_btn_1", type: "button", text: "ДНЕВНИК МИКРО-ПОБЕД — Гайд", rightBlockId: "branch_1_start", nextBlockId: "nav_btn_2" },
     "nav_btn_2": { id: "nav_btn_2", type: "button", text: "АУДИО ВРЕМЯ — музыка", rightBlockId: "branch_2_start", nextBlockId: "nav_btn_3" },
