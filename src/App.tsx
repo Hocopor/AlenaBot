@@ -702,7 +702,7 @@ export default function App() {
       seconds: type === "pause" ? 5 : undefined,
       url: type === "link" ? "https://" : (type === "file" || type === "audio") ? "" : undefined,
       menuMessageText: type === "menu" ? (globalMenu?.menuMessageText || "Сделай свой выбор ⬇️") : undefined,
-      menuAttachedBlocks: type === "menu" ? [...(globalMenu?.menuAttachedBlocks || [])] : undefined
+      menuAttachedBlocks: type === "menu" ? (globalMenu?.menuAttachedBlocks ? [...globalMenu.menuAttachedBlocks] : []) : undefined
     };
 
     const updatedBlocks = { ...scenario.blocks };
@@ -895,10 +895,18 @@ export default function App() {
       const globalMenu = (Object.values(updatedBlocks) as ScenarioBlock[]).find(b => b.type === 'menu' && b.id !== blockId);
       
       // Если меняем тип на MENU — подтягиваем глобальные настройки (если есть)
-      if (fields.type === 'menu' && currentBlock.type !== 'menu' && globalMenu) {
-        fields.text = globalMenu.text;
-        fields.menuMessageText = globalMenu.menuMessageText;
-        fields.menuAttachedBlocks = [...(globalMenu.menuAttachedBlocks || [])];
+      if (fields.type === 'menu' && currentBlock.type !== 'menu') {
+        const globalMenu = (Object.values(updatedBlocks) as ScenarioBlock[]).find(b => b.type === 'menu' && b.id !== blockId);
+        if (globalMenu) {
+          fields.text = globalMenu.text;
+          fields.menuMessageText = globalMenu.menuMessageText;
+          fields.menuAttachedBlocks = globalMenu.menuAttachedBlocks ? [...globalMenu.menuAttachedBlocks] : [];
+        } else {
+          // Дефолтные если это первый такой блок
+          if (!fields.text) fields.text = "Вернуться в меню";
+          if (!fields.menuMessageText) fields.menuMessageText = "Сделай свой выбор ⬇️";
+          if (!fields.menuAttachedBlocks) fields.menuAttachedBlocks = [];
+        }
       }
 
       const newBlock = { ...currentBlock, ...fields };
