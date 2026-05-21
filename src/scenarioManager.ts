@@ -817,7 +817,9 @@ export class ScenarioManager {
             recommendation: "Сократите название кнопки до 64 символов согласно лимитам Telegram."
           });
         }
-        if (!btn.startBlockId || !config.blocks[btn.startBlockId]) {
+        const isSystemReturnBtn = btn.text.trim().toLowerCase().includes("вернуться в меню");
+        
+        if (!isSystemReturnBtn && (!btn.startBlockId || !config.blocks[btn.startBlockId])) {
           errors.push({
             message: `Для кнопки "${btn.text || '#' + (idx + 1)}" не задан начальный блок сценария.`,
             recommendation: "Присоедините блок (например, блок Текста) кликом по плюсику справа от названия кнопки."
