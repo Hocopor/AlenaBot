@@ -713,6 +713,8 @@ export class TelegramBotService {
 
           // Поиск блока продолжения (Wait Button) после группы кнопок
           let waitBlockId: string | null = null;
+          let isWaitBlock = false;
+
           if (btn.rightBlockId) {
             waitBlockId = btn.rightBlockId;
           } else {
@@ -723,17 +725,23 @@ export class TelegramBotService {
             }
             if (currentInGroup.nextBlockId && config.blocks[currentInGroup.nextBlockId]?.type === "wait_button") {
               waitBlockId = currentInGroup.nextBlockId;
+              isWaitBlock = true;
             }
           }
 
           if (waitBlockId) {
-            if (!session.triggeredWaitBlocks) {
-              session.triggeredWaitBlocks = [];
-            }
-            if (!session.triggeredWaitBlocks.includes(waitBlockId)) {
-              const updatedWait = [...session.triggeredWaitBlocks, waitBlockId];
-              sessionManager.updateSession(userId, { triggeredWaitBlocks: updatedWait });
-              // Кнопка имеет связь вправо ИЛИ за группой стоит wait_button — переходим дальше!
+            if (isWaitBlock) {
+              if (!session.triggeredWaitBlocks) {
+                session.triggeredWaitBlocks = [];
+              }
+              if (!session.triggeredWaitBlocks.includes(waitBlockId)) {
+                const updatedWait = [...session.triggeredWaitBlocks, waitBlockId];
+                sessionManager.updateSession(userId, { triggeredWaitBlocks: updatedWait });
+                await this.executeBlock(ctx, waitBlockId, userId);
+              }
+            } else {
+              // Это переход вправо по ветке (rightBlockId). Разрешаем множественное нажатие, 
+              // если кнопка не одноразовая (isOnce кнопки уже проверено выше!)
               await this.executeBlock(ctx, waitBlockId, userId);
             }
           }
