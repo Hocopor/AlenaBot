@@ -470,24 +470,25 @@ export default function App() {
     Object.keys(sanitizedBlocks).forEach(id => {
       const b = sanitizedBlocks[id];
       // Если текст "Вернуться в меню" или уже имеет такой тип - нормализуем
-      if ((b.text?.toLowerCase().includes("вернуться в меню") || b.type === 'menu_return') && (b.type !== 'menu_return' || b.nextBlockId || b.rightBlockId)) {
-        sanitizedBlocks[id] = { ...b, type: 'menu_return', nextBlockId: undefined, rightBlockId: undefined };
-        changed = true;
+      if ((b.text?.toLowerCase().includes("вернуться в меню") || b.type === 'menu_return')) {
+        // У этой сущности НЕТ и НЕ МОЖЕТ БЫТЬ исходящих связей на доске
+        if (b.type !== 'menu_return' || b.nextBlockId || b.rightBlockId) {
+          sanitizedBlocks[id] = { ...b, type: 'menu_return', nextBlockId: undefined, rightBlockId: undefined };
+          changed = true;
+        }
       }
     });
 
-    // 2. Убираем любые ссылки на удаленный 'menu_return_msg' если они остались
+    // 2. Убираем любые ссылки на удаленный 'menu_return_msg'
     Object.keys(sanitizedBlocks).forEach(id => {
       const b = sanitizedBlocks[id];
-      if (b.type !== 'menu_return') {
-        if (b.nextBlockId === 'menu_return_msg' || b.rightBlockId === 'menu_return_msg') {
-           sanitizedBlocks[id] = { 
-             ...b, 
-             nextBlockId: b.nextBlockId === 'menu_return_msg' ? undefined : b.nextBlockId,
-             rightBlockId: b.rightBlockId === 'menu_return_msg' ? undefined : b.rightBlockId
-           };
-           changed = true;
-        }
+      if (b.nextBlockId === 'menu_return_msg' || b.rightBlockId === 'menu_return_msg') {
+         sanitizedBlocks[id] = { 
+           ...b, 
+           nextBlockId: b.nextBlockId === 'menu_return_msg' ? undefined : b.nextBlockId,
+           rightBlockId: b.rightBlockId === 'menu_return_msg' ? undefined : b.rightBlockId
+         };
+         changed = true;
       }
     });
 
@@ -1769,315 +1770,211 @@ export default function App() {
                               {selectedBlockId && scenario.blocks[selectedBlockId] ? (() => {
                                 const activeBlock = scenario.blocks[selectedBlockId];
                                 const isMenuReturn = activeBlock.type === 'menu_return' || activeBlock.type === 'menu';
+                                
+                                const blockOptions = (Object.values(scenario.blocks) as ScenarioBlock[])
+                                  .filter(b => b.type !== 'menu_return' && b.id !== activeBlock.id)
+                                  .sort((a, b) => a.id.localeCompare(b.id));
+
                                 return (
                                   <motion.div 
                                     initial={{ opacity: 0, x: 25 }}
                                     animate={{ opacity: 1, x: 0 }}
-                                    className="w-full lg:w-[320px] bg-white rounded-2xl border border-slate-200 p-4 shrink-0 flex flex-col justify-between overflow-y-auto"
+                                    className="w-full lg:w-[320px] bg-white rounded-2xl border border-slate-200 p-4 shrink-0 flex flex-col justify-between overflow-y-auto shadow-sm z-40"
                                   >
                                     <div className="space-y-4">
-                                      {/* Локальная шапка инспектора */}
-                                      {activeBlock.type === 'menu_return' && (activeBlock.nextBlockId || activeBlock.rightBlockId) && (
-                                        <div className="hidden">
-                                          {setTimeout(() => {
-                                             handleUpdateBlockField(activeBlock.id, { nextBlockId: undefined, rightBlockId: undefined });
-                                          }, 50)}
-                                        </div>
-                                      )}
                                       <div className="flex justify-between items-center pb-2.5 border-b border-slate-100">
                                         <div>
-                                          <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Параметры блока</h4>
-                                          <span className="text-[10px] font-mono text-slate-400 font-bold">id: {activeBlock.id}</span>
+                                          <h4 className="text-[10px] font-black text-slate-900 uppercase tracking-widest">Параметры блока</h4>
+                                          <span className="text-[9px] font-mono text-slate-400 font-bold tracking-tighter">id: {activeBlock.id}</span>
                                         </div>
                                         <button 
                                           onClick={() => setSelectedBlockId(null)}
-                                          className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1 rounded font-black text-xs"
+                                          className="text-slate-400 hover:text-slate-600 hover:bg-slate-100 p-1 rounded-lg font-black text-xs transition-colors"
                                         >
                                           ✕
                                         </button>
                                       </div>
 
-                                      {/* 1. Логический тип блока в БД */}
                                       <div>
-                                        <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Тип действия элемента:</label>
+                                        <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest mb-1.5 leading-none">Тип действия элемента:</label>
                                         <select
                                           value={activeBlock.type}
                                           onChange={(e) => handleUpdateBlockField(activeBlock.id, { type: e.target.value as ScenarioBlock["type"] })}
-                                          className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-400 focus:outline-none bg-slate-50 font-bold text-slate-700"
+                                          className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-400 focus:outline-none bg-slate-50 font-bold text-slate-700 shadow-xs"
                                         >
-                                          <option value="text">📝 Сообщение-Текст</option>
+                                          <option value="text">📝 Текстовое сообщение</option>
                                           <option value="button">🔘 Кнопка выбора</option>
                                           <option value="link">🔗 Веб-ссылка URL</option>
-                                          <option value="file">📁 Файл документ</option>
-                                          <option value="audio">🎵 Аудиофайл</option>
+                                          <option value="file">📁 Файл / Документ</option>
+                                          <option value="audio">🎵 Аудиозапись</option>
                                           <option value="pause">⏳ Пауза (задержка)</option>
                                           <option value="back">↩️ Кнопка «Назад»</option>
                                           <option value="menu">🏠 Кнопка «В меню»</option>
                                           <option value="menu_return">🔄 Настр. «Вернуться в меню»</option>
-                                          <option value="wait_button">🚦 Ожидание клика</option>
+                                          <option value="wait_button">🚥 Ожидание клика</option>
                                         </select>
                                       </div>
 
-                                      {/* 2. Текст сообщения / кнопка */}
-                                      {(activeBlock.type === "text" || activeBlock.type === "button" || activeBlock.type === "link" || activeBlock.type === "back" || activeBlock.type === "menu" || activeBlock.type === "menu_return") && (
-                                        <div>
-                                          <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                                            {activeBlock.type === "button" ? "Текст кнопки выбора" : (activeBlock.type === "menu_return" ? "Название кнопки" : "Отправляемый текст сообщения")}
+                                      {activeBlock.type !== "pause" && (
+                                        <div className="space-y-1.5">
+                                          <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest leading-none">
+                                            {activeBlock.type === "text" ? "Содержание сообщения" : "Текст на кнопке / Название"}
                                           </label>
                                           {activeBlock.type === "text" ? (
                                             <textarea
                                               value={activeBlock.text || ""}
                                               onChange={(e) => handleUpdateBlockField(activeBlock.id, { text: e.target.value })}
                                               rows={6}
-                                              placeholder="Введите текст сообщения... Поддерживаются HTML разметки <b>жирный</b>, <i>курсив</i>, <code>код</code>."
-                                              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 leading-normal font-sans text-slate-700"
+                                              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:ring-1 focus:ring-emerald-400 leading-normal font-sans text-slate-700 bg-slate-50/20"
                                             />
                                           ) : (
                                             <input
                                               type="text"
                                               value={activeBlock.text || ""}
                                               onChange={(e) => handleUpdateBlockField(activeBlock.id, { text: e.target.value })}
-                                              placeholder={activeBlock.type === "menu_return" ? "Вернуться в меню" : "Текст на кнопке"}
-                                              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-700 font-bold"
+                                              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-700 font-bold bg-slate-50/20"
                                             />
                                           )}
                                         </div>
                                       )}
 
-                                        {/* 2.6 Глобальные настройки кнопки Вернуться в меню (singleton) */}
-                                        {isMenuReturn && (
-                                          <div className="space-y-3 bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 shadow-sm">
-                                            <div className="flex items-center justify-between">
-                                              <h5 className="text-[10px] font-black text-emerald-800 uppercase tracking-widest leading-none">Глобальные настройки возврата:</h5>
-                                              <Wrench className="w-3 h-3 text-emerald-500" />
-                                            </div>
-                                            <div>
-                                              <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1">Текст сообщения после нажатия:</label>
-                                              <textarea 
-                                                value={scenario.menuReturnSettings?.text || ""}
-                                                rows={3}
-                                                onChange={(e) => {
-                                                  const newSettings = { ...scenario.menuReturnSettings!, text: e.target.value };
-                                                  updateScenarioState({ ...scenario, menuReturnSettings: newSettings });
-                                                }}
-                                                placeholder="Сделай выбор..."
-                                                className="w-full text-[10px] px-2 py-1.5 border border-emerald-200 rounded-lg bg-white text-slate-700 font-medium focus:ring-1 focus:ring-emerald-400 focus:outline-none"
-                                              />
-                                            </div>
-                                            <div className="pt-2 border-t border-emerald-100/50">
-                                              <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1.5 font-black tracking-tighter">ID блоков Reply-кнопок меню:</label>
-                                              <div className="space-y-2">
-                                                {scenario.menuReturnSettings?.buttonBlockIds.map((idVal, idx) => {
-                                                  const isValidId = idVal === "" || scenario.blocks[idVal];
-                                                  return (
-                                                    <div key={idx} className="flex items-center space-x-1">
-                                                      <div className="relative flex-1">
-                                                        <select 
-                                                          value={idVal}
-                                                          onChange={(e) => {
-                                                            const newIds = [...scenario.menuReturnSettings!.buttonBlockIds];
-                                                            newIds[idx] = e.target.value;
-                                                            updateScenarioState({ 
-                                                              ...scenario, 
-                                                              menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
-                                                            });
-                                                          }}
-                                                          className={`w-full text-[10px] px-2 py-1 border rounded bg-white font-mono focus:ring-1 focus:ring-emerald-400 focus:outline-none ${!isValidId ? 'border-rose-300 text-rose-600' : 'border-emerald-200 text-slate-700'}`}
-                                                        >
-                                                          <option value="">-- Выбрать блок по ID --</option>
-                                                          {(Object.values(scenario.blocks) as ScenarioBlock[])
-                                                            .filter(b => b.type !== 'menu_return' && b.type !== 'back')
-                                                            .sort((a, b) => a.id.localeCompare(b.id))
-                                                            .map(b => (
-                                                              <option key={b.id} value={b.id}>
-                                                                {b.id} ({b.type}): {b.text?.substring(0, 20) || "..."}
-                                                              </option>
-                                                            ))
-                                                          }
-                                                        </select>
-                                                      </div>
-                                                      <button 
-                                                        onClick={() => {
-                                                          const newIds = scenario.menuReturnSettings!.buttonBlockIds.filter((_, i) => i !== idx);
-                                                          updateScenarioState({ 
-                                                            ...scenario, 
-                                                            menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
-                                                          });
-                                                        }}
-                                                        className="p-1 text-rose-400 hover:bg-rose-50 hover:text-rose-600 rounded transition-colors"
-                                                      >
-                                                        <Trash2 className="w-3 h-3" />
-                                                      </button>
-                                                    </div>
-                                                  );
-                                                })}
-                                                <button 
-                                                  onClick={() => {
-                                                    updateScenarioState({ 
-                                                      ...scenario, 
-                                                      menuReturnSettings: { 
-                                                        ...scenario.menuReturnSettings!, 
-                                                        buttonBlockIds: [...(scenario.menuReturnSettings?.buttonBlockIds || []), ""] 
-                                                      }
-                                                    });
-                                                  }}
-                                                  className="w-full py-1.5 border border-dashed border-emerald-300 rounded-lg text-[10px] font-bold text-emerald-600 hover:bg-emerald-100/50 flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm active:scale-95 transition-transform"
-                                                >
-                                                  <Plus className="w-3 h-3" />
-                                                  <span>Добавить ID блока</span>
-                                                </button>
-                                              </div>
-                                              <p className="text-[7.5px] text-emerald-600 mt-2 font-black uppercase tracking-tight opacity-75 leading-tight">
-                                                * Настройки применятся ко ВСЕМ блокам этого типа в сценарии
-                                              </p>
-                                            </div>
-                                          </div>
-                                        )}
-
-                                      {/* 2.5 Настройки кнопки */}
-                                      {activeBlock.type === "button" && (
-                                        <div className="flex items-center space-x-2 mt-2">
-                                          <input
-                                            type="checkbox"
-                                            id="btn-isOnce"
-                                            checked={!!activeBlock.isOnce}
-                                            onChange={(e) => handleUpdateBlockField(activeBlock.id, { isOnce: e.target.checked })}
-                                            className="rounded text-emerald-500 focus:ring-emerald-400 focus:ring-offset-0 border-slate-300"
-                                          />
-                                          <label htmlFor="btn-isOnce" className="text-[10px] font-bold text-slate-600 block cursor-pointer select-none">
-                                            Однократное действие (нельзя нажать повторно)
-                                          </label>
-                                        </div>
-                                      )}
-
-                                      {/* 3. Ссылка URL или загрузка медиафайла */}
-                                      {(activeBlock.type === "link" || activeBlock.type === "file" || activeBlock.type === "audio") && (
-                                        <div className="space-y-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                                          <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                                            {activeBlock.type === "link" ? "Веб-ссылка перехода (URL):" : "Ссылка или путь к файлу:"}
-                                          </label>
-                                          <input
-                                            type="text"
-                                            placeholder={activeBlock.type === "link" ? "https://" : "/uploads/file или https://"}
-                                            value={activeBlock.url || ""}
-                                            onChange={(e) => handleUpdateBlockField(activeBlock.id, { url: e.target.value })}
-                                            className="w-full text-[11px] px-2.5 py-1.5 border border-slate-200 bg-white rounded-lg font-mono text-indigo-650 focus:outline-none focus:ring-1 focus:ring-indigo-400"
-                                          />
-
-                                          {(activeBlock.type === "file" || activeBlock.type === "audio") && (
-                                            <div className="pt-2 border-t border-slate-200">
-                                              <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Загрузить файл с компьютера:</span>
-                                              <label className="flex items-center justify-center border border-dashed border-slate-350 bg-white rounded-lg p-2 hover:bg-emerald-50 hover:border-emerald-400 transition-colors cursor-pointer select-none">
-                                                <input
-                                                  type="file"
-                                                  accept={activeBlock.type === "audio" ? "audio/*" : "*/*"}
-                                                  className="hidden"
-                                                  onChange={(e) => {
-                                                    const file = e.target.files?.[0];
-                                                    if (file) {
-                                                      handleFileUploadAsync(file, activeBlock.id);
-                                                    }
-                                                  }}
-                                                />
-                                                <div className="flex items-center space-x-1.5 text-[10px] font-extrabold text-slate-650 hover:text-emerald-700">
-                                                  <span>📤 Выбрать и загрузить...</span>
-                                                </div>
-                                              </label>
-                                            </div>
-                                          )}
-                                        </div>
-                                      )}
-
-                                      {/* 4. Задержка в секундах для паузы */}
-                                      {activeBlock.type === "pause" && (
-                                        <div className="bg-purple-50 p-3 rounded-xl border border-purple-100">
-                                          <label className="block text-[9px] font-black text-purple-700 uppercase tracking-widest mb-1.5">Таймаут задержки в секундах:</label>
+                                      {isMenuReturn && (
+                                        <div className="space-y-4 bg-emerald-50/50 p-4 rounded-xl border border-emerald-100 shadow-sm ring-1 ring-emerald-500/10">
                                           <div className="flex items-center space-x-2">
-                                            <input
-                                              type="number"
-                                              min={1}
-                                              value={activeBlock.seconds || 5}
-                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { seconds: parseInt(e.target.value) || 5 })}
-                                              className="w-20 text-xs px-2 py-1 border border-purple-200 rounded text-center font-bold text-purple-950 bg-white"
+                                            <div className="p-1 bg-emerald-100 rounded">
+                                              <Home className="w-3.5 h-3.5 text-emerald-600" />
+                                            </div>
+                                            <h5 className="text-[10px] font-black text-emerald-900 uppercase tracking-widest leading-none">Глобальное Меню</h5>
+                                          </div>
+
+                                          <div className="space-y-1.5">
+                                            <label className="block text-[8px] font-black text-emerald-700 uppercase tracking-tighter">Текст ответа после нажатия:</label>
+                                            <textarea 
+                                              value={scenario.menuReturnSettings?.text || ""}
+                                              rows={3}
+                                              onChange={(e) => updateScenarioState({ 
+                                                ...scenario, 
+                                                menuReturnSettings: { ...scenario.menuReturnSettings!, text: e.target.value } 
+                                              })}
+                                              placeholder="Напр: Сделай свой выбор..."
+                                              className="w-full text-[10px] px-2 py-1.5 border border-emerald-200 rounded-lg bg-white text-slate-700 focus:ring-1 focus:ring-emerald-400 focus:outline-none"
                                             />
-                                            <span className="text-xs text-purple-900 font-bold">сек.</span>
+                                          </div>
+
+                                          <div className="pt-2 border-t border-emerald-100/50">
+                                            <label className="block text-[8px] font-black text-emerald-700 uppercase tracking-tighter mb-2">Reply-кнопки (существующие блоки):</label>
+                                            <div className="space-y-2">
+                                              {scenario.menuReturnSettings?.buttonBlockIds.map((idVal, idx) => (
+                                                <div key={idx} className="flex items-center space-x-1">
+                                                  <select 
+                                                    value={idVal}
+                                                    onChange={(e) => {
+                                                      const newIds = [...scenario.menuReturnSettings!.buttonBlockIds];
+                                                      newIds[idx] = e.target.value;
+                                                      updateScenarioState({ ...scenario, menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds } });
+                                                    }}
+                                                    className="flex-1 text-[10px] px-2 py-1 border border-emerald-200 rounded-lg bg-white font-mono"
+                                                  >
+                                                    <option value="">-- Выбрать блок --</option>
+                                                    {blockOptions.map(o => <option key={o.id} value={o.id}>{o.id}: {o.text?.substring(0, 15)}...</option>)}
+                                                  </select>
+                                                  <button 
+                                                    onClick={() => {
+                                                      const newIds = scenario.menuReturnSettings!.buttonBlockIds.filter((_, i) => i !== idx);
+                                                      updateScenarioState({ ...scenario, menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds } });
+                                                    }} 
+                                                    className="p-1 px-2 text-rose-400 hover:bg-rose-50 rounded transition-colors"
+                                                  >
+                                                    <Trash2 className="w-3.5 h-3.5" />
+                                                  </button>
+                                                </div>
+                                              ))}
+                                              <button 
+                                                onClick={() => {
+                                                  updateScenarioState({ ...scenario, menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: [...(scenario.menuReturnSettings?.buttonBlockIds || []), ""] } });
+                                                }}
+                                                className="w-full py-1.5 border border-dashed border-emerald-300 rounded-lg text-[9px] font-black text-emerald-600 hover:bg-emerald-100 flex items-center justify-center space-x-1 transition-all active:scale-95"
+                                              >
+                                                <Plus className="w-3 h-3" />
+                                                <span>Привязать блок</span>
+                                              </button>
+                                            </div>
                                           </div>
                                         </div>
                                       )}
 
-                                      {/* 5. Настройка связей (Select-дропдауны прямого маппинга) */}
+                                      {activeBlock.type === "button" && (
+                                        <div className="flex items-center space-x-2 bg-slate-50 p-2.5 rounded-lg border border-slate-100 shadow-inner">
+                                          <input type="checkbox" id="btn-once" checked={!!activeBlock.isOnce} onChange={(e) => handleUpdateBlockField(activeBlock.id, { isOnce: e.target.checked })} className="rounded text-emerald-500 w-4 h-4" />
+                                          <label htmlFor="btn-once" className="text-[10px] font-bold text-slate-600 block cursor-pointer">Блокировать повторный клик</label>
+                                        </div>
+                                      )}
+
+                                      {(activeBlock.type === "link" || activeBlock.type === "file" || activeBlock.type === "audio") && (
+                                        <div className="space-y-2 bg-slate-50 p-3 rounded-xl border border-slate-200 shadow-inner">
+                                          <label className="block text-[8px] font-black text-slate-400 uppercase tracking-widest">Источник / URL:</label>
+                                          <input type="text" value={activeBlock.url || ""} onChange={(e) => handleUpdateBlockField(activeBlock.id, { url: e.target.value })} className="w-full text-[11px] px-2 py-1 border border-slate-200 rounded-lg font-mono bg-white" />
+                                          {activeBlock.type !== "link" && (
+                                            <button className="relative w-full py-2 border border-dashed border-slate-350 bg-white rounded-lg text-[10px] font-black text-slate-600 hover:bg-emerald-50 hover:text-emerald-700">
+                                              <input type="file" className="absolute inset-0 opacity-0 cursor-pointer" onChange={(e) => e.target.files?.[0] && handleFileUploadAsync(e.target.files[0], activeBlock.id)} />
+                                              Загрузить файл...
+                                            </button>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {activeBlock.type === "pause" && (
+                                        <div className="bg-purple-50 p-3 rounded-xl border border-purple-100 shadow-sm">
+                                          <label className="block text-[8px] font-black text-purple-700 uppercase tracking-widest mb-1">Задержка (сек):</label>
+                                          <input type="number" min={1} value={activeBlock.seconds || 5} onChange={(e) => handleUpdateBlockField(activeBlock.id, { seconds: parseInt(e.target.value) || 5 })} className="w-20 text-xs px-2 py-1 border border-purple-200 rounded text-center font-bold text-purple-950 bg-white" />
+                                        </div>
+                                      )}
+
                                       {!isMenuReturn && activeBlock.type !== 'back' && (
-                                        <div className="space-y-2.5 pt-3 border-t border-slate-100">
-                                          <h5 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Переопределение связей:</h5>
-                                          
-                                          <div>
-                                            <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Связь ВНИЗ (next):</label>
-                                            <select
-                                              value={activeBlock.nextBlockId || ""}
+                                        <div className="space-y-3 pt-3 border-t border-slate-100">
+                                          <h5 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Связи блока:</h5>
+                                          <div className="space-y-1">
+                                            <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Связь ВНИЗ (next):</label>
+                                            <select 
+                                              value={activeBlock.nextBlockId || ""} 
                                               onChange={(e) => handleUpdateBlockField(activeBlock.id, { nextBlockId: e.target.value || null })}
-                                              className="w-full text-[11px] px-2 py-1 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none"
+                                              className="w-full text-[10px] px-2 py-1.5 border border-slate-200 rounded-lg bg-slate-50 text-slate-700"
                                             >
-                                              <option value="">Нет (Прервать цепочку)</option>
-                                              {Object.keys(scenario.blocks).map((blkId) => {
-                                                if (blkId === activeBlock.id) return null;
-                                                const b = scenario.blocks[blkId];
-                                                return (
-                                                  <option key={blkId} value={blkId}>
-                                                    {blkId} ({b?.type}: {b?.text?.substring(0, 16)}...)
-                                                  </option>
-                                                );
-                                              })}
+                                              <option value="">Прервать ветку</option>
+                                              {blockOptions.map(b => <option key={b.id} value={b.id}>{b.id}: {b.text?.substring(0, 15)}...</option>)}
                                             </select>
                                           </div>
-
                                           {activeBlock.type === "button" && (
-                                            <div>
-                                              <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Связь ВПРАВО (right):</label>
-                                              <select
-                                                value={activeBlock.rightBlockId || ""}
+                                            <div className="space-y-1">
+                                              <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-tighter">Связь ВПРАВО (right):</label>
+                                              <select 
+                                                value={activeBlock.rightBlockId || ""} 
                                                 onChange={(e) => handleUpdateBlockField(activeBlock.id, { rightBlockId: e.target.value || null })}
-                                                className="w-full text-[11px] px-2 py-1 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none"
+                                                className="w-full text-[10px] px-2 py-1.5 border border-slate-200 rounded-lg bg-slate-50 text-slate-700"
                                               >
-                                                <option value="">Нет (Без правой ветки)</option>
-                                                {Object.keys(scenario.blocks).map((blkId) => {
-                                                  if (blkId === activeBlock.id) return null;
-                                                  const b = scenario.blocks[blkId];
-                                                  return (
-                                                    <option key={blkId} value={blkId}>
-                                                      {blkId} ({b?.type}: {b?.text?.substring(0, 16)}...)
-                                                    </option>
-                                                  );
-                                                })}
+                                                <option value="">Нет разветвления</option>
+                                                {blockOptions.map(b => <option key={b.id} value={b.id}>{b.id}: {b.text?.substring(0, 15)}...</option>)}
                                               </select>
                                             </div>
                                           )}
                                         </div>
                                       )}
-
                                     </div>
 
-                                    {/* Удаление карточки */}
-                                    <div className="pt-3 border-t border-slate-100">
-                                      <button
-                                        onClick={() => {
-                                          handleDeleteBlock(activeBlock.id);
-                                          setSelectedBlockId(null);
-                                        }}
-                                        className="w-full flex items-center justify-center py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl border border-rose-100 text-xs font-black transition-colors"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5 mr-1.5" />
-                                        Удалить блок
-                                      </button>
-                                    </div>
+                                    <button 
+                                      onClick={() => { handleDeleteBlock(activeBlock.id); setSelectedBlockId(null); }}
+                                      className="mt-6 w-full py-2.5 bg-rose-50 hover:bg-rose-100 text-rose-600 text-[10px] font-black uppercase tracking-widest rounded-xl transition-all border border-rose-100 flex items-center justify-center space-x-2"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                      <span>Удалить блок</span>
+                                    </button>
                                   </motion.div>
                                 );
                               })() : (
-                                <div className="hidden lg:flex w-[320px] bg-slate-50 border border-dashed border-slate-200 rounded-2xl items-center justify-center p-6 text-center shrink-0">
+                                <div className="hidden lg:flex w-[320px] bg-white border border-dashed border-slate-200 rounded-2xl items-center justify-center p-8 text-center shrink-0">
                                   <div className="space-y-2">
-                                    <div className="text-xl">👇</div>
-                                    <p className="text-[11px] text-slate-400 font-bold leading-normal">
-                                      Выберите любой блок на Miro-карте, чтобы редактировать его текст, события и связи.
-                                    </p>
+                                    <Focus className="w-8 h-8 text-slate-100 mx-auto" />
+                                    <p className="text-[10px] font-black text-slate-300 uppercase tracking-widest opacity-60">Выберите блок для настройки</p>
                                   </div>
                                 </div>
                               )}
