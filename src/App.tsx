@@ -31,7 +31,8 @@ import {
   Check,
   AlertCircle,
   Minus,
-  Focus
+  Focus,
+  Home
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -398,6 +399,26 @@ export default function App() {
         if (!conf.blocks) conf.blocks = {};
         if (!conf.menu) conf.menu = [];
         if (!conf.startBlockId) conf.startBlockId = "start_node";
+        if (!conf.menuReturnSettings) {
+          conf.menuReturnSettings = {
+            text: "Вернуться в меню",
+            buttonBlockIds: []
+          };
+        }
+
+        // Авто-нормализация при загрузке
+        let cleaned = false;
+        Object.keys(conf.blocks).forEach(id => {
+           const b = conf.blocks[id];
+           if ((b.text?.toLowerCase().includes("вернуться в меню") || b.type === 'menu_return') && (b.type !== 'menu_return' || b.nextBlockId || b.rightBlockId)) {
+             conf.blocks[id] = { ...b, type: 'menu_return', nextBlockId: undefined, rightBlockId: undefined };
+             cleaned = true;
+           }
+        });
+        if (conf.blocks['menu_return_msg']) {
+          delete conf.blocks['menu_return_msg'];
+          cleaned = true;
+        }
 
         setScenario(conf);
         
@@ -434,15 +455,60 @@ export default function App() {
 
   // Запись изменений в React-state, историю и автосохранение черновика
   const updateScenarioState = (newConfig: ScenarioConfig) => {
+    // Глубокая нормализация сценария согласно жестким требованиям
+    const sanitizedBlocks = { ...newConfig.blocks };
+    let changed = false;
+
+    // 1. Находим все блоки, которые должны быть 'menu_return'
+    Object.keys(sanitizedBlocks).forEach(id => {
+      const b = sanitizedBlocks[id];
+      // Если текст "Вернуться в меню" (любой регистр) - это сущность menu_return
+      if ((b.text?.toLowerCase().includes("вернуться в меню") || b.type === 'menu_return') && b.type !== 'menu_return') {
+        sanitizedBlocks[id] = { ...b, type: 'menu_return' };
+        changed = true;
+      }
+    });
+
+    // 2. Убиваем связи у всех 'menu_return' и чистим ссылки на 'menu_return_msg'
+    Object.keys(sanitizedBlocks).forEach(id => {
+      const b = sanitizedBlocks[id];
+      if (b.type === 'menu_return') {
+        if (b.nextBlockId || b.rightBlockId) {
+          sanitizedBlocks[id] = { ...b, nextBlockId: undefined, rightBlockId: undefined };
+          changed = true;
+        }
+      } else {
+        // У обычных блоков убираем ссылку на 'menu_return_msg', если она вдруг есть
+        if (b.nextBlockId === 'menu_return_msg' || b.rightBlockId === 'menu_return_msg') {
+           sanitizedBlocks[id] = { 
+             ...b, 
+             nextBlockId: b.nextBlockId === 'menu_return_msg' ? undefined : b.nextBlockId,
+             rightBlockId: b.rightBlockId === 'menu_return_msg' ? undefined : b.rightBlockId
+           };
+           // Конвертируем этот блок в menu_return если он стал тупиковым из-за удаления этой связи? 
+           // Нет, лучше просто убрать связь.
+           changed = true;
+        }
+      }
+    });
+
+    // 3. Удаляем технический блок 'menu_return_msg' с доски совершенно
+    if (sanitizedBlocks['menu_return_msg']) {
+      delete sanitizedBlocks['menu_return_msg'];
+      changed = true;
+    }
+
+    const finalConfig = changed ? { ...newConfig, blocks: sanitizedBlocks } : newConfig;
+
     // Отрезаем всё что шло после текущего индекса в истории (для хопа по Undo/Redo)
     const newHistory = history.slice(0, historyIndex + 1);
-    newHistory.push(newConfig);
+    newHistory.push(finalConfig);
     setHistory(newHistory);
     setHistoryIndex(newHistory.length - 1);
-    setScenario(newConfig);
+    setScenario(finalConfig);
     setHasUnsavedChanges(true);
 
-    autoSaveDraft(newConfig);
+    autoSaveDraft(finalConfig);
   };
 
   // Фоновое автосохранение на сервер
@@ -1566,6 +1632,17 @@ export default function App() {
                                               <Home className="w-12 h-12 text-emerald-900" />
                                             </div>
                                           )}
+                                          {block.type === 'menu_return' && (
+                                            <div className="mt-1 p-2 bg-emerald-50 rounded border border-emerald-100/50 text-[9px] text-emerald-800 space-y-1">
+                                              <div className="font-black uppercase tracking-tighter opacity-50">Вызовется меню:</div>
+                                              <div className="font-bold italic">«{scenario.menuReturnSettings?.text}»</div>
+                                              <div className="flex flex-wrap gap-1 mt-1">
+                                                {scenario.menuReturnSettings?.buttonBlockIds.map((bid, i) => (
+                                                  <span key={i} className="bg-emerald-200 text-emerald-900 px-1 rounded-sm text-[8px] font-mono">{bid}</span>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
                                           {block.type === 'pause' ? (
                                             <div className="flex items-center space-x-1.5 text-purple-900 bg-purple-50/60 p-2 rounded-lg border border-purple-100 font-bold">
                                               <Clock className="w-3.5 h-3.5 text-purple-600" />
@@ -1796,20 +1873,29 @@ export default function App() {
                                                 return (
                                                   <div key={idx} className="flex items-center space-x-1">
                                                     <div className="relative flex-1">
-                                                      <input 
-                                                        type="text"
+                                                      <select 
                                                         value={idVal}
                                                         onChange={(e) => {
                                                           const newIds = [...scenario.menuReturnSettings!.buttonBlockIds];
-                                                          newIds[idx] = cleanBlockId(e.target.value);
+                                                          newIds[idx] = e.target.value;
                                                           updateScenarioState({ 
                                                             ...scenario, 
                                                             menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
                                                           });
                                                         }}
-                                                        placeholder="wb_q3_b1"
-                                                        className={`w-full text-[10px] px-2 py-1 border rounded bg-white font-mono focus:ring-1 focus:ring-emerald-400 focus:outline-none ${!isValidId ? 'border-rose-300 text-rose-600' : 'border-emerald-200 text-slate-700'}`}
-                                                      />
+                                                        className={`w-full text-[10px] px-2 py-1 border rounded bg-white focus:ring-1 focus:ring-emerald-400 focus:outline-none ${!isValidId ? 'border-rose-300 text-rose-600' : 'border-emerald-200 text-slate-700'}`}
+                                                      >
+                                                        <option value="">-- Выберите блок --</option>
+                                                        {(Object.values(scenario.blocks) as ScenarioBlock[])
+                                                          .filter(b => b.type !== 'menu_return' && b.type !== 'back') // Не даем ссылаться на самих себя
+                                                          .sort((a, b) => (a.text || "").localeCompare(b.text || ""))
+                                                          .map(b => (
+                                                            <option key={b.id} value={b.id}>
+                                                              {b.id} ({b.type}): {b.text?.substring(0, 30) || "Без текста"}...
+                                                            </option>
+                                                          ))
+                                                        }
+                                                      </select>
                                                       {!isValidId && <span className="absolute -top-3 right-0 text-[7px] font-black text-rose-500 uppercase tracking-tighter bg-white px-1">ID не найден</span>}
                                                     </div>
                                                     <button 
