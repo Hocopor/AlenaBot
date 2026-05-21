@@ -275,10 +275,10 @@ const defaultScenario: ScenarioConfig = {
       "id": "branch1_final",
       "type": "text",
       "text": "Надеюсь, он станет твоим маленьким другом \nЕсли почувствуешь, что хочется глубже — я рядом. В июне открываю живую группу «Перерождение». Напиши мне — поговорим подробнее.",
-      "nextBlockId": "branch1_btns"
+      "nextBlockId": "branch1_btns_row"
     },
-    "branch1_btns": {
-      "id": "branch1_btns",
+    "branch1_btns_row": {
+      "id": "branch1_btns_row",
       "type": "button",
       "text": "Написать",
       "url": "https://t.me/ibanezebi64",
@@ -334,11 +334,12 @@ const defaultScenario: ScenarioConfig = {
       "id": "branch3_msg",
       "type": "text",
       "text": "Упражнение за 2 минуты успокаивает нервную систему.\nВключай прямо сейчас. Можно лёжа.",
-      "nextBlockId": "branch3_audio"
+      "nextBlockId": "branch3_media"
     },
-    "branch3_audio": {
-      "id": "branch3_audio",
-      "type": "audio",
+    "branch3_media": {
+      "id": "branch3_media",
+      "type": "link",
+      "text": "🔗 Аудио техника",
       "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
       "nextBlockId": "branch3_pause"
     },
@@ -352,10 +353,10 @@ const defaultScenario: ScenarioConfig = {
       "id": "branch3_final",
       "type": "text",
       "text": "Как ты? \nСохрани аудио — и возвращайся каждый раз, когда найдешь. Это работает.\nЕсли хочешь понять глубже — почему тревога возвращается снова и снова — напиши мне. Поговорим.",
-      "nextBlockId": "branch3_btns"
+      "nextBlockId": "branch3_btns_row"
     },
-    "branch3_btns": {
-      "id": "branch3_btns",
+    "branch3_btns_row": {
+      "id": "branch3_btns_row",
       "type": "button",
       "text": "Написать",
       "url": "https://t.me/ibanezebi64",
@@ -370,10 +371,10 @@ const defaultScenario: ScenarioConfig = {
       "id": "branch4_1",
       "type": "text",
       "text": "<b>ОПОРА</b>",
-      "nextBlockId": "branch4_btn1"
+      "nextBlockId": "branch4_btns_start"
     },
-    "branch4_btn1": {
-      "id": "branch4_btn1",
+    "branch4_btns_start": {
+      "id": "branch4_btns_start",
       "type": "button",
       "text": "1 - Маркер Тревоги",
       "rightBlockId": "branch4_msg1",
@@ -449,10 +450,10 @@ const defaultScenario: ScenarioConfig = {
       "id": "branch5_1",
       "type": "text",
       "text": "<b>ХОЧУ — Челленджи</b>",
-      "nextBlockId": "branch5_btn1"
+      "nextBlockId": "branch5_btns_start"
     },
-    "branch5_btn1": {
-      "id": "branch5_btn1",
+    "branch5_btns_start": {
+      "id": "branch5_btns_start",
       "type": "button",
       "text": "7 дней к себе",
       "rightBlockId": "branch5_msg1",
@@ -540,10 +541,10 @@ const defaultScenario: ScenarioConfig = {
       "id": "branch6_1",
       "type": "text",
       "text": "Рада, что ты здесь \n«Перерождение» — это живая группа. Всего 10 мест. \nЗдесь не будет лекций и домашних занятий. Только живая работа — мягко, в своем темпе, с обратной связью от меня.\nДля тех, кто давно думал: что-то должно измениться. Но непонятно — с чего начать и хватит ли сил.\nХочешь узнать подробнее — напиши мне лично. Расскажу всё.",
-      "nextBlockId": "branch6_btns"
+      "nextBlockId": "branch6_btn_write"
     },
-    "branch6_btns": {
-      "id": "branch6_btns",
+    "branch6_btn_write": {
+      "id": "branch6_btn_write",
       "type": "button",
       "text": "Написать",
       "url": "https://t.me/ibanezebi64",
@@ -559,10 +560,10 @@ const defaultScenario: ScenarioConfig = {
       "id": "branch6_final",
       "type": "text",
       "text": "Буду ждать твоих сообщений 🤍\nНе торопись — просто знай, что место есть. И оно может быть твоим.",
-      "nextBlockId": "branch6_btns_end"
+      "nextBlockId": "branch6_btns_row"
     },
-    "branch6_btns_end": {
-      "id": "branch6_btns_end",
+    "branch6_btns_row": {
+      "id": "branch6_btns_row",
       "type": "button",
       "text": "Написать",
       "url": "https://t.me/ibanezebi64",

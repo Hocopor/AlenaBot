@@ -180,10 +180,10 @@ export default function App() {
       const rect = el.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
-      const zoomDelta = e.deltaY * -0.002;
+      const zoomDelta = e.deltaY * -0.0012;
 
       setZoom((prevZoom) => {
-        const newZoom = Math.min(Math.max(0.2, prevZoom + zoomDelta), 2);
+        const newZoom = Math.min(Math.max(0.15, prevZoom + zoomDelta), 2.5);
         if (newZoom === prevZoom) return prevZoom;
 
         setPan((prevPan) => {
@@ -1102,7 +1102,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+      <main className={`${adminTab === "constructor" && panelMode === "admin" ? "w-full" : "max-w-7xl mx-auto"} px-4 sm:px-6 lg:px-8 py-6`}>
 
         {/* ТОСТЕР-УВЕДОМЛЕНИЕ */}
         <AnimatePresence>
@@ -1216,160 +1216,138 @@ export default function App() {
                 </div>
 
                 {/* Основная рабочая сетка */}
-                <div className="flex-1 mt-4 relative h-[75vh]">
+                <div className="flex-1 mt-4 relative h-[calc(100vh-180px)]">
                   
-                  {/* Рабочая область: Miro-доска */}
-                  <div className="w-full h-full border border-slate-200 rounded-xl overflow-hidden shadow-xs relative bg-slate-50">
+                  {(() => {
+                    const coords: Record<string, { row: number; col: number }> = {};
+                    const visited = new Set<string>();
                     
-                    {/* Кнопки сброса масштаба */}
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex bg-white/90 backdrop-blur border border-slate-200 shadow-md rounded-xl overflow-hidden p-1 space-x-1">
-                      <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"><Minus className="h-4 w-4" /></button>
-                      <div className="flex items-center px-2 min-w-[60px] justify-center text-xs font-bold text-slate-600">
-                        {Math.round(zoom * 100)}%
-                      </div>
-                      <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"><Plus className="h-4 w-4" /></button>
-                      <div className="w-[1px] h-5 bg-slate-200 self-center mx-1" />
-                      <button onClick={() => { setZoom(1); setPan({x:0, y:0}); }} className="px-3 flex items-center space-x-1.5 text-xs font-bold text-slate-600 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-colors">
-                        <Focus className="h-3.5 w-3.5" />
-                        <span>СБРОС ВИДА</span>
-                      </button>
-                    </div>
+                    // Находим корневые элементы (на которые никто не ссылается)
+                    const inDegree: Record<string, number> = {};
+                    Object.keys(scenario.blocks).forEach(id => inDegree[id] = 0);
+                    
+                    Object.values(scenario.blocks).forEach((b: ScenarioBlock) => {
+                      if (b.nextBlockId) inDegree[b.nextBlockId] = (inDegree[b.nextBlockId] || 0) + 1;
+                      if (b.rightBlockId) inDegree[b.rightBlockId] = (inDegree[b.rightBlockId] || 0) + 1;
+                      if (b.type === 'menu' || b.type === 'menu_return') {
+                        scenario.menu.forEach(m => {
+                          if (m.startBlockId) {
+                            inDegree[m.startBlockId] = (inDegree[m.startBlockId] || 0) + 1;
+                          }
+                        });
+                      }
+                    });
 
-                    {/* Список карточек в формате Miro-доски */}
-                    {(() => {
-                      const coords: Record<string, { row: number; col: number }> = {};
-                      const visited = new Set<string>();
+                    let currentRow = 0;
+
+                    // Рекурсивный автоматический расчет сетки связей 2D
+                    function place(id: string | null | undefined, r: number, c: number) {
+                      if (!id || !scenario || visited.has(id)) return;
+                      visited.add(id);
+
+                      let finalR = r;
+                      let finalC = c;
                       
-                      // Находим корневые элементы (на которые никто не ссылается)
-                      const inDegree: Record<string, number> = {};
-                      Object.keys(scenario.blocks).forEach(id => inDegree[id] = 0);
-                      
-                      Object.values(scenario.blocks).forEach((b: ScenarioBlock) => {
-                        if (b.nextBlockId) inDegree[b.nextBlockId] = (inDegree[b.nextBlockId] || 0) + 1;
-                        if (b.rightBlockId) inDegree[b.rightBlockId] = (inDegree[b.rightBlockId] || 0) + 1;
-                        if (b.type === 'menu') {
+                      // Защита от наложения карточек друг на друга
+                      while (Object.values(coords).some(p => p.row === finalR && p.col === finalC)) {
+                        finalC += 1;
+                      }
+
+                      coords[id] = { row: finalR, col: finalC };
+
+                      const b = scenario.blocks[id];
+                      if (b) {
+                        if (b.rightBlockId) {
+                          place(b.rightBlockId, finalR, finalC + 1);
+                        }
+                        if (b.nextBlockId) {
+                          place(b.nextBlockId, finalR + 1, finalC);
+                        }
+                        if (b.type === 'menu' || b.type === 'menu_return') {
+                          let menuC = finalC;
                           scenario.menu.forEach(m => {
                             if (m.startBlockId) {
-                              inDegree[m.startBlockId] = (inDegree[m.startBlockId] || 0) + 1;
+                              place(m.startBlockId, finalR + 1, menuC);
+                              menuC += 1;
                             }
                           });
                         }
-                      });
-
-                      let currentRow = 0;
-
-                      // Рекурсивный автоматический расчет сетки связей 2D
-                      function place(id: string | null | undefined, r: number, c: number) {
-                        if (!id || !scenario || visited.has(id)) return;
-                        visited.add(id);
-
-                        let finalR = r;
-                        let finalC = c;
-                        
-                        // Защита от наложения карточек друг на друга: если ячейка занята, сдвигаем правее
-                        while (Object.values(coords).some(p => p.row === finalR && p.col === finalC)) {
-                          finalC += 1;
-                        }
-
-                        coords[id] = { row: finalR, col: finalC };
-
-                        const b = scenario.blocks[id];
-                        if (b) {
-                          // Сначала ответвления выбора (вправо)
-                          if (b.rightBlockId) {
-                            place(b.rightBlockId, finalR, finalC + 1);
-                          }
-                          // Затем последующая цепочка диалога (вниз)
-                          if (b.nextBlockId) {
-                            place(b.nextBlockId, finalR + 1, finalC);
-                          }
-                          // Узел типа menu ветвится на все пункты главного меню
-                          if (b.type === 'menu') {
-                            let menuC = finalC;
-                            scenario.menu.forEach(m => {
-                              if (m.startBlockId) {
-                                place(m.startBlockId, finalR + 1, menuC);
-                                menuC += 1;
-                              }
-                            });
-                          }
-                        }
-                        
-                        if (finalR > currentRow) {
-                          currentRow = finalR;
-                        }
                       }
-
-                      // 1. Сначала размещаем стартовый блок
-                      let rootRowOffset = 0;
                       
-                      if (scenario.startBlockId && !visited.has(scenario.startBlockId)) {
-                        place(scenario.startBlockId, rootRowOffset, 0);
+                      if (finalR > currentRow) {
+                        currentRow = finalR;
+                      }
+                    }
+
+                    // 1. Сначала размещаем стартовый блок
+                    let rootRowOffset = 0;
+                    
+                    if (scenario.startBlockId && !visited.has(scenario.startBlockId)) {
+                      place(scenario.startBlockId, rootRowOffset, 0);
+                      rootRowOffset = currentRow + 2;
+                    }
+
+                    // 2. Затем размещаем остальные корневые блоки
+                    Object.keys(inDegree).forEach(id => {
+                      if (inDegree[id] === 0 && !visited.has(id)) {
+                        place(id, rootRowOffset, 0);
                         rootRowOffset = currentRow + 2;
                       }
+                    });
 
-                      // 2. Затем размещаем остальные корневые блоки
-                      Object.keys(inDegree).forEach(id => {
-                        if (inDegree[id] === 0 && !visited.has(id)) {
-                          place(id, rootRowOffset, 0);
-                          rootRowOffset = currentRow + 2;
-                        }
-                      });
+                    // 3. Выстраиваем оставшиеся потерянные («сиротские») блоки
+                    let maxCol = 0;
+                    Object.values(coords).forEach(p => {
+                      if (p.col > maxCol) maxCol = p.col;
+                    });
 
-                          // 3. Выстраиваем оставшиеся потерянные («сиротские») блоки в крайний правый столбец
-                          let maxCol = 0;
-                          Object.values(coords).forEach(p => {
-                            if (p.col > maxCol) maxCol = p.col;
-                          });
+                    let orphanRow = 0;
+                    Object.keys(scenario.blocks).forEach(id => {
+                      if (!visited.has(id)) {
+                        coords[id] = { row: orphanRow, col: maxCol + 2 };
+                        orphanRow += 1;
+                      }
+                    });
 
-                          let orphanRow = 0;
-                          Object.keys(scenario.blocks).forEach(id => {
-                            if (!visited.has(id)) {
-                              coords[id] = { row: orphanRow, col: maxCol + 2 };
-                              orphanRow += 1;
-                            }
-                          });
+                    // Базовая геометрия
+                    const cardWidth = 280;
+                    const cardHeight = 135;
+                    const colWidth = 370;
+                    const rowHeight = 220;
 
+                    return (
+                      <div className="flex flex-col lg:flex-row gap-5 items-stretch h-full w-full">
+                        
+                        {/* ЗАБОР КАНВАСА РИСОВАНИЯ */}
+                        <div 
+                          ref={canvasRef}
+                          className="flex-1 bg-slate-50 relative overflow-hidden border border-slate-200 rounded-2xl select-none touch-none shadow-sm"
+                          style={{ cursor: isDraggingCanvas ? 'grabbing' : 'grab' }}
+                          onMouseDown={handleCanvasMouseDown}
+                          onMouseMove={handleCanvasMouseMove}
+                          onMouseUp={handleCanvasMouseUp}
+                          onMouseLeave={handleCanvasMouseUp}
+                        >
+                          {/* Фоновая Miro-сетка из точек */}
+                          <div 
+                            className="absolute inset-0 pointer-events-none" 
+                            style={{
+                              backgroundImage: 'radial-gradient(#cbd5e1 1.5px, transparent 1.5px)',
+                              backgroundSize: `${22 * zoom}px ${22 * zoom}px`,
+                              backgroundPosition: `${pan.x}px ${pan.y}px`,
+                              opacity: 0.75
+                            }}
+                          />
 
-                          // Базовая геометрия расположения на доске Miro
-                          const cardWidth = 280;
-                          const cardHeight = 135;
-                          const colWidth = 370;
-                          const rowHeight = 220;
-
-                          return (
-                            <div className="flex flex-col lg:flex-row gap-5 items-stretch h-[660px] w-full">
-                              
-                              {/* ЗАБОР КАНВАСА РИСОВАНИЯ */}
-                              <div 
-                                ref={canvasRef}
-                                className="flex-1 bg-slate-50 relative overflow-hidden border border-slate-200 rounded-2xl select-none touch-none"
-                                style={{ cursor: isDraggingCanvas ? 'grabbing' : 'grab' }}
-                                onMouseDown={handleCanvasMouseDown}
-                                onMouseMove={handleCanvasMouseMove}
-                                onMouseUp={handleCanvasMouseUp}
-                                onMouseLeave={handleCanvasMouseUp}
-                              >
-                                {/* Фоновая Miro-сетка из точек */}
-                                <div 
-                                  className="absolute inset-0 pointer-events-none" 
-                                  style={{
-                                    backgroundImage: 'radial-gradient(#cbd5e1 1.5px, transparent 1.5px)',
-                                    backgroundSize: `${22 * zoom}px ${22 * zoom}px`,
-                                    backgroundPosition: `${pan.x}px ${pan.y}px`,
-                                    opacity: 0.75
-                                  }}
-                                />
-
-                                {/* Трансформируемый контейнер элементов */}
-                                <div 
-                                  className="absolute origin-top-left"
-                                  style={{
-                                    transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
-                                    width: '10000px',
-                                    height: '10000px',
-                                  }}
-                                >
+                          {/* Трансформируемый контейнер элементов */}
+                          <div 
+                            className="absolute origin-top-left"
+                            style={{
+                              transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+                              width: '10000px',
+                              height: '10000px',
+                            }}
+                          >
                                   {/* Слой SVG соединений */}
                                   <svg className="absolute inset-0 pointer-events-none overflow-visible w-full h-full">
                                     <defs>
@@ -1759,25 +1737,28 @@ export default function App() {
                                       )}
 
                                       {/* 2.6 Глобальные настройки кнопки Вернуться в меню (singleton) */}
-                                      {activeBlock.type === "menu_return" && scenario.menuReturnSettings && (
+                                      {(activeBlock.type === "menu_return" || activeBlock.type === "menu") && scenario.menuReturnSettings && (
                                         <div className="space-y-3 bg-emerald-50/50 p-3 rounded-xl border border-emerald-100">
-                                          <h5 className="text-[10px] font-black text-emerald-800 uppercase tracking-widest">Общие настройки возврата:</h5>
-                                          <div>
-                                            <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1">Текст сообщения при возврате:</label>
-                                            <input 
-                                              type="text"
-                                              value={scenario.menuReturnSettings.text}
-                                              onChange={(e) => {
-                                                const newSettings = { ...scenario.menuReturnSettings!, text: e.target.value };
-                                                setScenario({ ...scenario, menuReturnSettings: newSettings });
-                                                setHasUnsavedChanges(true);
-                                              }}
-                                              className="w-full text-[10px] px-2 py-1.5 border border-emerald-200 rounded bg-white text-slate-700 font-medium"
-                                            />
+                                          <div className="flex items-center justify-between">
+                                            <h5 className="text-[10px] font-black text-emerald-800 uppercase tracking-widest leading-none">Общие настройки возврата:</h5>
+                                            <Wrench className="w-3 h-3 text-emerald-400" />
                                           </div>
                                           <div>
-                                            <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1">ID блоков для кнопок меню:</label>
-                                            <div className="space-y-1.5">
+                                            <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1">Сообщение пользователю при возврате:</label>
+                                            <textarea 
+                                              value={scenario.menuReturnSettings.text}
+                                              rows={3}
+                                              onChange={(e) => {
+                                                const newSettings = { ...scenario.menuReturnSettings!, text: e.target.value };
+                                                updateScenarioState({ ...scenario, menuReturnSettings: newSettings });
+                                              }}
+                                              placeholder="Сделай выбор..."
+                                              className="w-full text-[10px] px-2 py-1.5 border border-emerald-200 rounded-lg bg-white text-slate-700 font-medium focus:ring-1 focus:ring-emerald-400 focus:outline-none"
+                                            />
+                                          </div>
+                                          <div className="pt-2 border-t border-emerald-100/50">
+                                            <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1.5">ID блоков для кнопок меню (Reply):</label>
+                                            <div className="space-y-2">
                                               {scenario.menuReturnSettings.buttonBlockIds.map((idVal, idx) => (
                                                 <div key={idx} className="flex items-center space-x-1">
                                                   <input 
@@ -1786,25 +1767,23 @@ export default function App() {
                                                     onChange={(e) => {
                                                       const newIds = [...scenario.menuReturnSettings!.buttonBlockIds];
                                                       newIds[idx] = e.target.value;
-                                                      setScenario({ 
+                                                      updateScenarioState({ 
                                                         ...scenario, 
                                                         menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
                                                       });
-                                                      setHasUnsavedChanges(true);
                                                     }}
                                                     placeholder="wb_q3_b1"
-                                                    className="flex-1 text-[10px] px-2 py-1 border border-emerald-200 rounded bg-white font-mono"
+                                                    className="flex-1 text-[10px] px-2 py-1 border border-emerald-200 rounded bg-white font-mono focus:ring-1 focus:ring-emerald-400 focus:outline-none"
                                                   />
                                                   <button 
                                                     onClick={() => {
                                                       const newIds = scenario.menuReturnSettings!.buttonBlockIds.filter((_, i) => i !== idx);
-                                                      setScenario({ 
+                                                      updateScenarioState({ 
                                                         ...scenario, 
                                                         menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
                                                       });
-                                                      setHasUnsavedChanges(true);
                                                     }}
-                                                    className="p-1 text-rose-500 hover:bg-rose-50 rounded"
+                                                    className="p-1 text-rose-400 hover:bg-rose-50 hover:text-rose-600 rounded transition-colors"
                                                   >
                                                     <Trash2 className="w-3 h-3" />
                                                   </button>
@@ -1812,22 +1791,21 @@ export default function App() {
                                               ))}
                                               <button 
                                                 onClick={() => {
-                                                  setScenario({ 
+                                                  updateScenarioState({ 
                                                     ...scenario, 
                                                     menuReturnSettings: { 
                                                       ...scenario.menuReturnSettings!, 
                                                       buttonBlockIds: [...scenario.menuReturnSettings!.buttonBlockIds, ""] 
                                                     }
                                                   });
-                                                  setHasUnsavedChanges(true);
                                                 }}
-                                                className="w-full py-1 border border-dashed border-emerald-300 rounded text-[10px] font-bold text-emerald-600 hover:bg-emerald-100 flex items-center justify-center space-x-1"
+                                                className="w-full py-1.5 border border-dashed border-emerald-300 rounded-lg text-[10px] font-bold text-emerald-600 hover:bg-emerald-100/50 flex items-center justify-center space-x-1.5 cursor-pointer"
                                               >
                                                 <Plus className="w-3 h-3" />
-                                                <span>Добавить кнопку</span>
+                                                <span>Добавить ID блока</span>
                                               </button>
                                             </div>
-                                            <p className="text-[8px] text-emerald-600 mt-2 italic">* Изменения применятся ко ВСЕМ кнопкам этого типа</p>
+                                            <p className="text-[8px] text-emerald-600 mt-2 italic font-bold">* Данные настройки применятся ко ВСЕМ блокам этого типа в сценарии</p>
                                           </div>
                                         </div>
                                       )}
@@ -1986,11 +1964,9 @@ export default function App() {
 
                       </div>
                     </div>
+                  )}
 
-              </div>
-            )}
-
-            {/* ВКЛАДКА: НАСТРОЙКИ СИСТЕМЫ */}
+                  {/* ВКЛАДКА: НАСТРОЙКИ СИСТЕМЫ */}
             {adminTab === "settings" && (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 
