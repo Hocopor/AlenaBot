@@ -1394,8 +1394,9 @@ export default function App() {
 
                           // Переход вправо ( rightBlockId ) запускает новую колонку на том же уровне строки r
                           if (b.rightBlockId && !visited.has(b.rightBlockId)) {
-                            const rightCol = nextCol++;
-                            const branchMaxR = layoutChain(b.rightBlockId, rightCol, r, isMain);
+                            // Вместо глобального инкремента используем колонку сразу справа от текущей
+                            const branchCol = col + 1;
+                            const branchMaxR = layoutChain(b.rightBlockId, branchCol, r, isMain);
                             if (branchMaxR > maxR) maxR = branchMaxR;
                           }
 
