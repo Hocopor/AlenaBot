@@ -691,12 +691,18 @@ export default function App() {
     if (!scenario) return;
 
     const newId = generateUUID();
+    
+    // Поиск эталонных настроек для кнопки "В меню"
+    const globalMenu = (Object.values(scenario.blocks) as ScenarioBlock[]).find(b => b.type === 'menu');
+
     const newBlock: ScenarioBlock = {
       id: newId,
       type: type,
-      text: type === "pause" ? "" : (type === "file" ? "Прикрепленный файл" : type === "audio" ? "Аудиозапись" : "Новая карточка. Отредактируйте текст..."),
+      text: type === "pause" ? "" : (type === "file" ? "Прикрепленный файл" : type === "audio" ? "Аудиозапись" : (type === "menu" ? (globalMenu?.text || "Вернуться в меню") : "Новая карточка. Отредактируйте текст...")),
       seconds: type === "pause" ? 5 : undefined,
-      url: type === "link" ? "https://" : (type === "file" || type === "audio") ? "" : undefined
+      url: type === "link" ? "https://" : (type === "file" || type === "audio") ? "" : undefined,
+      menuMessageText: type === "menu" ? (globalMenu?.menuMessageText || "Сделай свой выбор ⬇️") : undefined,
+      menuAttachedBlocks: type === "menu" ? [...(globalMenu?.menuAttachedBlocks || [])] : undefined
     };
 
     const updatedBlocks = { ...scenario.blocks };
@@ -879,10 +885,40 @@ export default function App() {
     if (!scenario) return;
 
     const updatedBlocks = { ...scenario.blocks };
-    updatedBlocks[blockId] = {
-      ...updatedBlocks[blockId],
-      ...fields
-    };
+    const currentBlock = updatedBlocks[blockId];
+    if (!currentBlock) return;
+
+    // СИНХРОНИЗАЦИЯ: Если это блок типа "menu", либо меняется тип на "menu"
+    const isMenuTarget = fields.type === 'menu' || (currentBlock.type === 'menu' && !fields.type);
+
+    if (isMenuTarget) {
+      const globalMenu = (Object.values(updatedBlocks) as ScenarioBlock[]).find(b => b.type === 'menu' && b.id !== blockId);
+      
+      // Если меняем тип на MENU — подтягиваем глобальные настройки (если есть)
+      if (fields.type === 'menu' && currentBlock.type !== 'menu' && globalMenu) {
+        fields.text = globalMenu.text;
+        fields.menuMessageText = globalMenu.menuMessageText;
+        fields.menuAttachedBlocks = [...(globalMenu.menuAttachedBlocks || [])];
+      }
+
+      const newBlock = { ...currentBlock, ...fields };
+      updatedBlocks[blockId] = newBlock;
+
+      // Рассылаем настройки по всем остальным блокам типа "menu"
+      const syncFields = {
+        text: newBlock.text,
+        menuMessageText: newBlock.menuMessageText,
+        menuAttachedBlocks: newBlock.menuAttachedBlocks ? [...newBlock.menuAttachedBlocks] : []
+      };
+
+      Object.keys(updatedBlocks).forEach(id => {
+        if (updatedBlocks[id].type === 'menu') {
+          updatedBlocks[id] = { ...updatedBlocks[id], ...syncFields };
+        }
+      });
+    } else {
+      updatedBlocks[blockId] = { ...currentBlock, ...fields };
+    }
 
     updateScenarioState({
       ...scenario,
@@ -1758,12 +1794,6 @@ export default function App() {
                                             if (newType === "menu") {
                                               fields.nextBlockId = null;
                                               fields.rightBlockId = null;
-                                              if (!activeBlock.menuMessageText) {
-                                                fields.menuMessageText = "";
-                                              }
-                                              if (!activeBlock.menuAttachedBlocks) {
-                                                fields.menuAttachedBlocks = [];
-                                              }
                                             }
                                             handleUpdateBlockField(activeBlock.id, fields);
                                           }}
