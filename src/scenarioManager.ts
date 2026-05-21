@@ -4,10 +4,12 @@ import crypto from "crypto";
 
 export interface ScenarioBlock {
   id: string;
-  type: 'text' | 'button' | 'link' | 'back' | 'menu' | 'pause' | 'wait_button';
+  type: 'text' | 'button' | 'link' | 'back' | 'menu' | 'pause' | 'wait_button' | 'file' | 'audio';
   text?: string;
   url?: string;
   seconds?: number;
+  isOnce?: boolean;
+  isMenuUnlock?: boolean;
   nextBlockId?: string | null;  // Ссылка на следующий блок вниз
   rightBlockId?: string | null; // Ссылка на блок справа (для типа button)
 }
@@ -28,6 +30,7 @@ export interface ScenarioError {
 export interface ScenarioConfig {
   telegramBotToken: string;
   contactLink: string;
+  startBlockId?: string;
   menu: ScenarioMenuButton[];
   blocks: Record<string, ScenarioBlock>;
 }
@@ -73,365 +76,532 @@ export function decryptToken(token: string): string {
 
 // Дефолтный сценарий (соответствует первоначальной структуре бота из botConfig.ts)
 const defaultScenario: ScenarioConfig = {
-  telegramBotToken: process.env.TELEGRAM_BOT_TOKEN || "",
-  contactLink: "https://t.me/ibanezebi64",
-  menu: [
-    { id: "menu_diary", text: "ДНЕВНИК МИКРО-ПОБЕД — Гайд", startBlockId: "diary_header" },
-    { id: "menu_audio", text: "АУДИО ВРЕМЯ — музыка", startBlockId: "audio_header" },
-    { id: "menu_exercise", text: "УПРАЖНЕНИЕ   —  техники", startBlockId: "exercise_header" },
-    { id: "menu_opora", text: "ОПОРА", startBlockId: "opora_header" },
-    { id: "menu_want", text: "ХОЧУ — Челленджи", startBlockId: "want_header" },
-    { id: "menu_rebirth", text: "🩶 ГРУППА «ПЕРЕРОЖДЕНИЕ»", startBlockId: "rebirth_content" }
+  "telegramBotToken": process.env.TELEGRAM_BOT_TOKEN || "",
+  "contactLink": "https://t.me/ibanezebi64",
+  "startBlockId": "welcome_1",
+  "menu": [
+    {
+      "id": "menu_start",
+      "text": "Старт",
+      "startBlockId": "welcome_1"
+    },
+    {
+      "id": "menu_return",
+      "text": "Вернуться в меню",
+      "startBlockId": "menu_return_msg"
+    }
   ],
-  blocks: {
-    // Ветка 1 Дневник микро-побед
-    "diary_header": {
-      id: "diary_header",
-      type: "text",
-      text: "ДНЕВНИК МИКРО-ПОБЕД — Гайд",
-      nextBlockId: "diary_btn_guide"
+  "blocks": {
+    "welcome_1": {
+      "id": "welcome_1",
+      "type": "text",
+      "text": "Привет. Рада, что ты здесь🤍\n\nЯ Алёна — психолог-СоПутница. Помогаю мягко распутать то, что внутри давно накопилось. Без давления и осуждения.\n\nПрежде чем отдам тебе шаги - инструменты, я хочу понять, что сейчас происходит внутри. Два ключевых вопроса, которые помогут подобрать решение именно под тебя.\n\nЭто место — безопасное. Можно выдохнуть.",
+      "nextBlockId": "pause_1"
     },
-    "diary_btn_guide": {
-      id: "diary_btn_guide",
-      type: "button",
-      text: "1 - Гайд легализации бездействия🩶",
-      rightBlockId: "diary_content"
+    "pause_1": {
+      "id": "pause_1",
+      "type": "pause",
+      "seconds": 15,
+      "nextBlockId": "welcome_2_txt"
     },
-    "diary_content": {
-      id: "diary_content",
-      type: "text",
-      text: "Сначала — одна мысль.\nБездействие это не провал. Иногда это кажется большим, на то, что хватает силы. И это честно.\nВнутри дневника — маленькие шаги. Таких, чтобы не надо было «брать себя в руки».\nПросто — чуть бережнее к себе. День за днём.",
-      nextBlockId: "diary_download"
+    "welcome_2_txt": {
+      "id": "welcome_2_txt",
+      "type": "text",
+      "text": "Скажи честно — что из этого сейчас про тебя?",
+      "nextBlockId": "wb_q1_b1"
     },
-    "diary_download": {
-      id: "diary_download",
-      type: "link",
-      text: "📖 Скачать Дневник микро-побед (Гайд)",
-      url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-      nextBlockId: "diary_pause"
+    "wb_q1_b1": {
+      "id": "wb_q1_b1",
+      "type": "button",
+      "text": "😮‍💨 Устала, но продолжаю тянуть",
+      "isOnce": true,
+      "rightBlockId": "welcome_3_txt",
+      "nextBlockId": "wb_q1_b2"
     },
-    "diary_pause": {
-      id: "diary_pause",
-      type: "pause",
-      seconds: 10,
-      nextBlockId: "diary_next"
+    "wb_q1_b2": {
+      "id": "wb_q1_b2",
+      "type": "button",
+      "text": "😶 Всё серое — и не знаю почему",
+      "isOnce": true,
+      "rightBlockId": "welcome_3_txt",
+      "nextBlockId": "wb_q1_b3"
     },
-    "diary_next": {
-      id: "diary_next",
-      type: "text",
-      text: "Надеюсь, он станет твоим маленьким другом \nЕсли почувствуешь, что хочется глубже — я рядом. В июне открываю живую группу «Перерождение». Напиши мне — поговорим подробнее.",
-      nextBlockId: "diary_contact_link"
+    "wb_q1_b3": {
+      "id": "wb_q1_b3",
+      "type": "button",
+      "text": "😰 Тревога, которая не отпускает",
+      "isOnce": true,
+      "rightBlockId": "welcome_3_txt",
+      "nextBlockId": "wb_q1_b4"
     },
-    "diary_contact_link": {
-      id: "diary_contact_link",
-      type: "link",
-      text: "✉️ Написать Алёне",
-      url: "https://t.me/ibanezebi64",
-      nextBlockId: "diary_to_menu"
+    "wb_q1_b4": {
+      "id": "wb_q1_b4",
+      "type": "button",
+      "text": "💭Не понимаю себя и что со мной",
+      "isOnce": true,
+      "rightBlockId": "welcome_3_txt",
+      "nextBlockId": "wb_q1_b5"
     },
-    "diary_to_menu": {
-      id: "diary_to_menu",
-      type: "menu",
-      text: "«Вернуться в меню»"
+    "wb_q1_b5": {
+      "id": "wb_q1_b5",
+      "type": "button",
+      "text": "🌀 Всё сразу",
+      "isOnce": true,
+      "rightBlockId": "welcome_3_txt"
     },
-
-    // Ветка 2 Аудио время
-    "audio_header": {
-      id: "audio_header",
-      type: "text",
-      text: "Аудио библиотека\nВключай — и просто побудь. Ничего делать не нужно.\nЭто твои несколько минут только для тебя.",
-      nextBlockId: "audio_link"
+    "welcome_3_txt": {
+      "id": "welcome_3_txt",
+      "type": "text",
+      "text": "А внутри чаще всего звучит что-то из этого?",
+      "nextBlockId": "wb_q2_b1"
     },
-    "audio_link": {
-      id: "audio_link",
-      type: "link",
-      text: "🎵 Аудио библиотека - успокаивающая музыка",
-      url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
-      nextBlockId: "audio_pause"
+    "wb_q2_b1": {
+      "id": "wb_q2_b1",
+      "type": "button",
+      "text": "Я просто ленивая",
+      "isOnce": true,
+      "rightBlockId": "welcome_4_txt",
+      "nextBlockId": "wb_q2_b2"
     },
-    "audio_pause": {
-      id: "audio_pause",
-      type: "pause",
-      seconds: 10,
-      nextBlockId: "audio_next"
+    "wb_q2_b2": {
+      "id": "wb_q2_b2",
+      "type": "button",
+      "text": "Надо взять себя в руки",
+      "isOnce": true,
+      "rightBlockId": "welcome_4_txt",
+      "nextBlockId": "wb_q2_b3"
     },
-    "audio_next": {
-      id: "audio_next",
-      type: "text",
-      text: "Побудь в этом состоянии чуть дольше \nА если захочешь — загляни в другие материалы. Там есть реальность, дневник и кое-что ещё ⬇️",
-      nextBlockId: "audio_to_menu"
+    "wb_q2_b3": {
+      "id": "wb_q2_b3",
+      "type": "button",
+      "text": "У других всё норм — только у меня",
+      "isOnce": true,
+      "rightBlockId": "welcome_4_txt",
+      "nextBlockId": "wb_q2_b4"
     },
-    "audio_to_menu": {
-      id: "audio_to_menu",
-      type: "menu",
-      text: "«Вернуться в меню»"
+    "wb_q2_b4": {
+      "id": "wb_q2_b4",
+      "type": "button",
+      "text": "Я не знаю, чего хочу",
+      "isOnce": true,
+      "rightBlockId": "welcome_4_txt"
     },
-
-    // Ветка 3 Упражнения
-    "exercise_header": {
-      id: "exercise_header",
-      type: "text",
-      text: "УПРАЖНЕНИЕ   —  техники",
-      nextBlockId: "exercise_btn_square"
+    "welcome_4_txt": {
+      "id": "welcome_4_txt",
+      "type": "text",
+      "text": "Слышу тебя 🩶\nВсё это — не слабость и не лень. Это сигнал. Тело и душа просят опоры.\nВыбери, с чего хочешь начать ⬇️",
+      "nextBlockId": "wb_q3_b1"
     },
-    "exercise_btn_square": {
-      id: "exercise_btn_square",
-      type: "button",
-      text: "«Квадрат Дыхания» аудио",
-      rightBlockId: "exercise_content"
+    "wb_q3_b1": {
+      "id": "wb_q3_b1",
+      "type": "button",
+      "text": "ДНЕВНИК МИКРО-ПОБЕД — Гайд",
+      "rightBlockId": "branch_1_diary",
+      "nextBlockId": "wb_q3_b2"
     },
-    "exercise_content": {
-      id: "exercise_content",
-      type: "text",
-      text: "Упражнение за 2 минуты успокаивает нервную систему.\nВключай прямо сейчас. Можно лёжа.",
-      nextBlockId: "exercise_audio_link"
+    "wb_q3_b2": {
+      "id": "wb_q3_b2",
+      "type": "button",
+      "text": "АУДИО ВРЕМЯ — музыка",
+      "rightBlockId": "branch_2_audio",
+      "nextBlockId": "wb_q3_b3"
     },
-    "exercise_audio_link": {
-      id: "exercise_audio_link",
-      type: "link",
-      text: "🎧 Аудиоинструкция «Квадрат Дыхания»",
-      url: "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
-      nextBlockId: "exercise_pause"
+    "wb_q3_b3": {
+      "id": "wb_q3_b3",
+      "type": "button",
+      "text": "УПРАЖНЕНИЕ   —  техники",
+      "rightBlockId": "branch_3_exercises",
+      "nextBlockId": "wb_q3_b4"
     },
-    "exercise_pause": {
-      id: "exercise_pause",
-      type: "pause",
-      seconds: 7,
-      nextBlockId: "exercise_next"
+    "wb_q3_b4": {
+      "id": "wb_q3_b4",
+      "type": "button",
+      "text": "ОПОРА",
+      "rightBlockId": "branch_4_support",
+      "nextBlockId": "wb_q3_b5"
     },
-    "exercise_next": {
-      id: "exercise_next",
-      type: "text",
-      text: "Как ты? \nСохрани аудио — и возвращайся каждый раз, когда найдешь. Это работает.\nЕсли хочешь понять глубже — почему тревога возвращается снова и снова — напиши мне. Поговорим.",
-      nextBlockId: "exercise_contact_link"
+    "wb_q3_b5": {
+      "id": "wb_q3_b5",
+      "type": "button",
+      "text": "ХОЧУ — Челленджи",
+      "rightBlockId": "branch_5_challenge",
+      "nextBlockId": "wb_q3_b6"
     },
-    "exercise_contact_link": {
-      id: "exercise_contact_link",
-      type: "link",
-      text: "✉️ Написать Алёне",
-      url: "https://t.me/ibanezebi64",
-      nextBlockId: "exercise_to_menu"
+    "wb_q3_b6": {
+      "id": "wb_q3_b6",
+      "type": "button",
+      "text": "🩶 ГРУППА «ПЕРЕРОЖДЕНИЕ»",
+      "rightBlockId": "branch_6_group"
     },
-    "exercise_to_menu": {
-      id: "exercise_to_menu",
-      type: "menu",
-      text: "«Вернуться в меню»"
+    "branch_1_diary": {
+      "id": "branch_1_diary",
+      "type": "text",
+      "text": "ДНЕВНИК МИКРО-ПОБЕД — Гайд",
+      "nextBlockId": "br1_b1"
     },
-
-    // Ветка 4 Опора
-    "opora_header": {
-      id: "opora_header",
-      type: "text",
-      text: "ОПОРА",
-      nextBlockId: "opora_btn_anxiety"
+    "br1_b1": {
+      "id": "br1_b1",
+      "type": "button",
+      "text": "1 - Гайд легализации бездействия🩶",
+      "rightBlockId": "br1_txt1"
     },
-    "opora_btn_anxiety": {
-      id: "opora_btn_anxiety",
-      type: "button",
-      text: "1 - Маркер Тревоги",
-      rightBlockId: "opora_anxiety_content",
-      nextBlockId: "opora_btn_support"
+    "br1_txt1": {
+      "id": "br1_txt1",
+      "type": "text",
+      "text": "Сначала — одна мысль.\nБездействие это не провал. Иногда это кажется большим, на то, что хватает силы. И это честно.\nВнутри дневника — маленькие шаги. Таких, чтобы не надо было «брать себя в руки».\nПросто — чуть бережнее к себе. День за днём.",
+      "nextBlockId": "br1_link"
     },
-    "opora_btn_support": {
-      id: "opora_btn_support",
-      type: "button",
-      text: "2 - Фразы Поддержка",
-      rightBlockId: "opora_support_content"
+    "br1_link": {
+      "id": "br1_link",
+      "type": "file",
+      "text": "Дневник",
+      "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "nextBlockId": "br1_pause"
     },
-    "opora_anxiety_content": {
-      id: "opora_anxiety_content",
-      type: "text",
-      text: "Маркер Тревоги \nЭтот простой инструмент — поможет понять, что сейчас происходит внутри. Тревога, страх или апатия.\nКогда узнаешь — становится чуть легче. Уже не «со мной что-то не так», а просто — вот что сейчас есть.",
-      nextBlockId: "opora_anxiety_link"
+    "br1_pause": {
+      "id": "br1_pause",
+      "type": "pause",
+      "seconds": 10,
+      "nextBlockId": "br1_end"
     },
-    "opora_anxiety_link": {
-      id: "opora_anxiety_link",
-      type: "link",
-      text: "📋 Скачать Маркер Тревоги (PDF)",
-      url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-      nextBlockId: "opora_anxiety_pause"
+    "br1_end": {
+      "id": "br1_end",
+      "type": "text",
+      "text": "Надеюсь, он станет твоим маленьким другом \nЕсли почувствуешь, что хочется глубже — я рядом. В июне открываю живую группу «Перерождение». Напиши мне — поговорим подробнее.",
+      "nextBlockId": "br1_end_b1"
     },
-    "opora_anxiety_pause": {
-      id: "opora_anxiety_pause",
-      type: "pause",
-      seconds: 10,
-      nextBlockId: "opora_anxiety_next"
+    "br1_end_b1": {
+      "id": "br1_end_b1",
+      "type": "link",
+      "text": "Написать",
+      "url": "https://t.me/placeholder",
+      "nextBlockId": "br1_end_b2"
     },
-    "opora_anxiety_next": {
-      id: "opora_anxiety_next",
-      type: "text",
-      text: "Теперь ты знаешь чуть больше о себе. \nЭто уже немаловажно. Если хочешь — следующий шаг: реальный Квадрат. Оно помогает прямо в данный момент.",
-      nextBlockId: "opora_anxiety_to_menu"
+    "br1_end_b2": {
+      "id": "br1_end_b2",
+      "type": "button",
+      "text": "Вернуться в меню",
+      "rightBlockId": "menu_return_msg"
     },
-    "opora_anxiety_to_menu": {
-      id: "opora_anxiety_to_menu",
-      type: "menu",
-      text: "«Вернуться в меню»"
+    "branch_2_audio": {
+      "id": "branch_2_audio",
+      "type": "audio",
+      "text": "<b>Аудио библиотека</b>\nВключай — и просто побудь. Ничего делать не нужно.\nЭто твои несколько минут только для тебя.",
+      "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-1.mp3",
+      "nextBlockId": "branch_2_pause"
     },
-    "opora_support_content": {
-      id: "opora_support_content",
-      type: "text",
-      text: "Фразы Поддержка\nСтань переводчиком для своего ребенка.\n12 фраз которые открывают диалог без давления и осуждения.",
-      nextBlockId: "opora_support_link"
+    "branch_2_pause": {
+      "id": "branch_2_pause",
+      "type": "pause",
+      "seconds": 10,
+      "nextBlockId": "branch_2_end"
     },
-    "opora_support_link": {
-      id: "opora_support_link",
-      type: "link",
-      text: "📋 Скачать Фразы Поддержки (PDF)",
-      url: "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
-      nextBlockId: "opora_support_pause"
+    "branch_2_end": {
+      "id": "branch_2_end",
+      "type": "text",
+      "text": "Побудь в этом состоянии чуть дольше \nА если захочешь — загляни в другие материалы. Там есть реальность, дневник и кое-что ещё ⬇️",
+      "nextBlockId": "br2_end_b1"
     },
-    "opora_support_pause": {
-      id: "opora_support_pause",
-      type: "pause",
-      seconds: 10,
-      nextBlockId: "opora_support_next"
+    "br2_end_b1": {
+      "id": "br2_end_b1",
+      "type": "button",
+      "text": "Вернуться в меню",
+      "rightBlockId": "menu_return_msg"
     },
-    "opora_support_next": {
-      id: "opora_support_next",
-      type: "text",
-      text: "Возвращайся к ним в любой момент \nИ помни — слова работают, когда мы готовы их услышать. Сегодня ты была готова.\nЕсли захочется большего — я здесь. Живая группа «Перерождение» всегда открыта.",
-      nextBlockId: "opora_support_to_menu"
+    "branch_3_exercises": {
+      "id": "branch_3_exercises",
+      "type": "text",
+      "text": "<b>УПРАЖНЕНИЕ   —  техники</b>",
+      "nextBlockId": "br3_b1"
     },
-    "opora_support_to_menu": {
-      id: "opora_support_to_menu",
-      type: "menu",
-      text: "«Вернуться в меню»"
+    "br3_b1": {
+      "id": "br3_b1",
+      "type": "button",
+      "text": "«Квадрат Дыхания»  аудио",
+      "rightBlockId": "br3_audio"
     },
-
-    // Ветка 5 Челленджи
-    "want_header": {
-      id: "want_header",
-      type: "text",
-      text: "ХОЧУ — Челленджи",
-      nextBlockId: "want_btn_7days"
+    "br3_audio": {
+      "id": "br3_audio",
+      "type": "file",
+      "text": "Упражнение за 2 минуты успокаивает нервную систему.\nВключай прямо сейчас. Можно лёжа.",
+      "url": "https://www.soundhelix.com/examples/mp3/SoundHelix-Song-2.mp3",
+      "nextBlockId": "branch_3_pause"
     },
-    "want_btn_7days": {
-      id: "want_btn_7days",
-      type: "button",
-      text: "7 дней к себе",
-      rightBlockId: "want_7days_content",
-      nextBlockId: "want_btn_14days"
+    "branch_3_pause": {
+      "id": "branch_3_pause",
+      "type": "pause",
+      "seconds": 7,
+      "nextBlockId": "branch_3_end"
     },
-    "want_btn_14days": {
-      id: "want_btn_14days",
-      type: "button",
-      text: "14 дней к себе",
-      rightBlockId: "want_14days_content"
+    "branch_3_end": {
+      "id": "branch_3_end",
+      "type": "text",
+      "text": "Как ты? \nСохрани аудио — и возвращайся каждый раз, когда найдешь. Это работает.\nЕсли хочешь понять глубже — почему тревога возвращается снова и снова — напиши мне. Поговорим.",
+      "nextBlockId": "br3_end_b1"
     },
-    "want_7days_content": {
-      id: "want_7days_content",
-      type: "text",
-      text: "7 дней к себе \nОтлично, что ты здесь \nЧеллендж — это не «заставить себя». Это маленькое приключение к себе.\nКаждый день — одно простое действие. Без давления. Без оценок. Просто попробуй — каково это, когда к себе по-доброму.",
-      nextBlockId: "want_7days_pause5"
+    "br3_end_b1": {
+      "id": "br3_end_b1",
+      "type": "link",
+      "text": "Написать",
+      "url": "https://t.me/placeholder",
+      "nextBlockId": "br3_end_b2"
     },
-    "want_7days_pause5": {
-      id: "want_7days_pause5",
-      type: "pause",
-      seconds: 5,
-      nextBlockId: "want_7days_link"
+    "br3_end_b2": {
+      "id": "br3_end_b2",
+      "type": "button",
+      "text": "Вернуться в меню",
+      "rightBlockId": "menu_return_msg"
     },
-    "want_7days_link": {
-      id: "want_7days_link",
-      type: "link",
-      text: "🚪 Начать челлендж (7 дней)",
-      url: "https://telegra.ph/CHellendzh-7-dnej-k-sebe-05-20",
-      nextBlockId: "want_7days_pause10"
+    "branch_4_support": {
+      "id": "branch_4_support",
+      "type": "text",
+      "text": "<b>ОПОРА</b>",
+      "nextBlockId": "br4_b1"
     },
-    "want_7days_pause10": {
-      id: "want_7days_pause10",
-      type: "pause",
-      seconds: 10,
-      nextBlockId: "want_7days_next"
+    "br4_b1": {
+      "id": "br4_b1",
+      "type": "button",
+      "text": "1 - Маркер Тревоги",
+      "rightBlockId": "br4_marker",
+      "nextBlockId": "br4_b2"
     },
-    "want_7days_next": {
-      id: "want_7days_next",
-      type: "text",
-      text: "Ты решилась — и это уже шаг 🤍\nВеди дневник рядом — так будет виднее, как ты меня. Даже когда кажется, что ничего не происходит.",
-      nextBlockId: "want_7days_to_menu"
+    "br4_b2": {
+      "id": "br4_b2",
+      "type": "button",
+      "text": "2 - Фразы Поддержка",
+      "rightBlockId": "br4_phrases"
     },
-    "want_7days_to_menu": {
-      id: "want_7days_to_menu",
-      type: "menu",
-      text: "«Вернуться в меню»"
+    "br4_marker": {
+      "id": "br4_marker",
+      "type": "file",
+      "text": "<b>Маркер Тревоги</b>\nЭтот простой инструмент — поможет понять, что сейчас происходит внутри. Тревога ,страх или апатия.\nКогда узнаешь — становится чуть легче. Уже не «со мной что-то не так», а просто — вот что сейчас есть.",
+      "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "nextBlockId": "branch_4_pause_1"
     },
-    "want_14days_content": {
-      id: "want_14days_content",
-      type: "text",
-      text: "14 дней к себе \nОтлично, что ты здесь \nЧеллендж — это не «заставить себя». Это маленькое приключение к себе.\nКаждый день — одно простое действие. Без давления. Без оценок. Просто попробуй — каково это, когда к себе по-доброму.",
-      nextBlockId: "want_14days_pause5"
+    "branch_4_pause_1": {
+      "id": "branch_4_pause_1",
+      "type": "pause",
+      "seconds": 10,
+      "nextBlockId": "branch_4_end_1"
     },
-    "want_14days_pause5": {
-      id: "want_14days_pause5",
-      type: "pause",
-      seconds: 5,
-      nextBlockId: "want_14days_link"
+    "branch_4_end_1": {
+      "id": "branch_4_end_1",
+      "type": "text",
+      "text": "Теперь ты знаешь чуть больше о себе. \nЭто уже немаловажно. Если хочешь — следующий шаг: реальный Квадрат. Оно помогает прямо в данный момент.",
+      "nextBlockId": "br4_end1_b1"
     },
-    "want_14days_link": {
-      id: "want_14days_link",
-      type: "link",
-      text: "🚪 Начать челлендж (14 дней)",
-      url: "https://telegra.ph/CHellendzh-14-dnej-k-sebe-05-20",
-      nextBlockId: "want_14days_pause10"
+    "br4_end1_b1": {
+      "id": "br4_end1_b1",
+      "type": "button",
+      "text": "Вернуться в меню",
+      "rightBlockId": "menu_return_msg"
     },
-    "want_14days_pause10": {
-      id: "want_14days_pause10",
-      type: "pause",
-      seconds: 10,
-      nextBlockId: "want_14days_next"
+    "br4_phrases": {
+      "id": "br4_phrases",
+      "type": "file",
+      "text": "<b>Фразы Поддержка</b>\nСтань переводчиком для своего ребенка.\n12 фраз которые открывают диалог без давления и осуждения.",
+      "url": "https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf",
+      "nextBlockId": "br4_pause_2"
     },
-    "want_14days_next": {
-      id: "want_14days_next",
-      type: "text",
-      text: "Ты решилась — и это уже шаг 🤍\nВеди дневник рядом — так будет виднее, как ты меня. Даже когда кажется, что ничего не происходит.",
-      nextBlockId: "want_14days_to_menu"
+    "br4_pause_2": {
+      "id": "br4_pause_2",
+      "type": "pause",
+      "seconds": 10,
+      "nextBlockId": "br4_end_2"
     },
-    "want_14days_to_menu": {
-      id: "want_14days_to_menu",
-      type: "menu",
-      text: "«Вернуться в меню»"
+    "br4_end_2": {
+      "id": "br4_end_2",
+      "type": "text",
+      "text": "Возвращайся к ним в любой момент \nИ помни — слова работают, когда мы готовы их услышать. Сегодня ты была готова.\nЕсли захочется большего — я здесь. Живая группа «Перерождение» всегда открыта.",
+      "nextBlockId": "br4_end2_b1"
     },
-
-    // Ветка 6 Группа перерождение
-    "rebirth_content": {
-      id: "rebirth_content",
-      type: "text",
-      text: "Рада, что ты здесь \n«Перерождение» — это живая группа. Всего 10 мест. \nЗдесь не будет лекций и домашних занятий. Только живая работа — мягко, в своем темпе, с обратной связью от меня.\nДля тех, кто давно думал: что-то должно измениться. Но непонятно — с чего начать и хватит ли сил.\nХочешь узнать подробнее — напиши мне лично. Расскажу всё.",
-      nextBlockId: "rebirth_link"
+    "br4_end2_b1": {
+      "id": "br4_end2_b1",
+      "type": "button",
+      "text": "Вернуться в меню",
+      "rightBlockId": "menu_return_msg"
     },
-    "rebirth_link": {
-      id: "rebirth_link",
-      type: "link",
-      text: "✉️ Написать лично Алёне",
-      url: "https://t.me/ibanezebi64",
-      nextBlockId: "rebirth_pause"
+    "branch_5_challenge": {
+      "id": "branch_5_challenge",
+      "type": "text",
+      "text": "<b>ХОЧУ — Челленджи</b>",
+      "nextBlockId": "br5_b1"
     },
-    "rebirth_pause": {
-      id: "rebirth_pause",
-      type: "pause",
-      seconds: 10,
-      nextBlockId: "rebirth_next"
+    "br5_b1": {
+      "id": "br5_b1",
+      "type": "button",
+      "text": "7 дней к себе",
+      "rightBlockId": "br5_7days",
+      "nextBlockId": "br5_b2"
     },
-    "rebirth_next": {
-      id: "rebirth_next",
-      type: "text",
-      text: "Буду ждать твоих сообщений 🤍\nНе торопись — просто знай, что место есть. И оно может быть твоим.",
-      nextBlockId: "rebirth_link_write"
+    "br5_b2": {
+      "id": "br5_b2",
+      "type": "button",
+      "text": "14 дней к себе",
+      "rightBlockId": "br5_14days"
     },
-    "rebirth_link_write": {
-      id: "rebirth_link_write",
-      type: "link",
-      text: "✉️ Написать",
-      url: "https://t.me/ibanezebi64",
-      nextBlockId: "rebirth_to_menu"
+    "br5_7days": {
+      "id": "br5_7days",
+      "type": "text",
+      "text": "<b>7 дней к себе</b>\nОтлично, что ты здесь \nЧеллендж — это не «заставить себя». Это маленькое приключение к себе.\nКаждый день — одно простое действие. Без давления. Без оценок. Просто попробуй — каково это, когда к себе по-доброму.",
+      "nextBlockId": "br5_pause_1"
     },
-    "rebirth_to_menu": {
-      id: "rebirth_to_menu",
-      type: "menu",
-      text: "«Вернуться в меню»"
+    "br5_pause_1": {
+      "id": "br5_pause_1",
+      "type": "pause",
+      "seconds": 5,
+      "nextBlockId": "br5_link_7d"
+    },
+    "br5_link_7d": {
+      "id": "br5_link_7d",
+      "type": "link",
+      "text": "Доступ к челленджу",
+      "url": "https://example.com/7days",
+      "nextBlockId": "br5_pause_2"
+    },
+    "br5_pause_2": {
+      "id": "br5_pause_2",
+      "type": "pause",
+      "seconds": 10,
+      "nextBlockId": "br5_end_1"
+    },
+    "br5_end_1": {
+      "id": "br5_end_1",
+      "type": "text",
+      "text": "Ты решилась — и это уже шаг 🤍\nВеди дневник рядом — так будет виднее, как ты меня. Даже когда кажется, что ничего не происходит.",
+      "nextBlockId": "br5_end1_b1"
+    },
+    "br5_end1_b1": {
+      "id": "br5_end1_b1",
+      "type": "button",
+      "text": "Вернуться в меню",
+      "rightBlockId": "menu_return_msg"
+    },
+    "br5_14days": {
+      "id": "br5_14days",
+      "type": "text",
+      "text": "<b>14 дней к себе</b>\nОтлично, что ты здесь \nЧеллендж — это не «заставить себя». Это маленькое приключение к себе.\nКаждый день — одно простое действие. Без давления. Без оценок. Просто попробуй — каково это, когда к себе по-доброму.",
+      "nextBlockId": "br5_pause_3"
+    },
+    "br5_pause_3": {
+      "id": "br5_pause_3",
+      "type": "pause",
+      "seconds": 5,
+      "nextBlockId": "br5_link_14d"
+    },
+    "br5_link_14d": {
+      "id": "br5_link_14d",
+      "type": "link",
+      "text": "Доступ к челленджу",
+      "url": "https://example.com/14days",
+      "nextBlockId": "br5_pause_4"
+    },
+    "br5_pause_4": {
+      "id": "br5_pause_4",
+      "type": "pause",
+      "seconds": 10,
+      "nextBlockId": "br5_end_2"
+    },
+    "br5_end_2": {
+      "id": "br5_end_2",
+      "type": "text",
+      "text": "Ты решилась — и это уже шаг 🤍\nВеди дневник рядом — так будет виднее, как ты меня. Даже когда кажется, что ничего не происходит.",
+      "nextBlockId": "br5_end2_b1"
+    },
+    "br5_end2_b1": {
+      "id": "br5_end2_b1",
+      "type": "button",
+      "text": "Вернуться в меню",
+      "rightBlockId": "menu_return_msg"
+    },
+    "branch_6_group": {
+      "id": "branch_6_group",
+      "type": "text",
+      "text": "Рада, что ты здесь \n«Перерождение» — это живая группа. Всего 10 мест. \nЗдесь не будет лекций и домашних занятий. Только живая работа — мягко, в своем темпе, с обратной связью от меня.\nДля тех, кто давно думал: что-то должно измениться. Но непонятно — с чего начать и хватит ли сил.\nХочешь узнать подробнее — напиши мне лично. Расскажу всё.",
+      "nextBlockId": "br6_b1"
+    },
+    "br6_b1": {
+      "id": "br6_b1",
+      "type": "link",
+      "text": "Написать",
+      "url": "https://t.me/placeholder",
+      "nextBlockId": "branch_6_pause"
+    },
+    "branch_6_pause": {
+      "id": "branch_6_pause",
+      "type": "pause",
+      "seconds": 10,
+      "nextBlockId": "branch_6_end"
+    },
+    "branch_6_end": {
+      "id": "branch_6_end",
+      "type": "text",
+      "text": "Буду ждать твоих сообщений 🤍\nНе торопись — просто знай, что место есть. И оно может быть твоим.",
+      "nextBlockId": "br6_end_b1"
+    },
+    "br6_end_b1": {
+      "id": "br6_end_b1",
+      "type": "link",
+      "text": "Написать",
+      "url": "https://t.me/placeholder",
+      "nextBlockId": "br6_end_b2"
+    },
+    "br6_end_b2": {
+      "id": "br6_end_b2",
+      "type": "button",
+      "text": "Вернуться в меню",
+      "rightBlockId": "menu_return_msg"
+    },
+    "menu_return_msg": {
+      "id": "menu_return_msg",
+      "type": "text",
+      "text": "Сделай свой выбор ⬇️",
+      "nextBlockId": "ret_b1"
+    },
+    "ret_b1": {
+      "id": "ret_b1",
+      "type": "button",
+      "text": "ДНЕВНИК МИКРО-ПОБЕД — Гайд",
+      "rightBlockId": "branch_1_diary",
+      "nextBlockId": "ret_b2"
+    },
+    "ret_b2": {
+      "id": "ret_b2",
+      "type": "button",
+      "text": "АУДИО ВРЕМЯ — музыка",
+      "rightBlockId": "branch_2_audio",
+      "nextBlockId": "ret_b3"
+    },
+    "ret_b3": {
+      "id": "ret_b3",
+      "type": "button",
+      "text": "УПРАЖНЕНИЕ   —  техники",
+      "rightBlockId": "branch_3_exercises",
+      "nextBlockId": "ret_b4"
+    },
+    "ret_b4": {
+      "id": "ret_b4",
+      "type": "button",
+      "text": "ОПОРА",
+      "rightBlockId": "branch_4_support",
+      "nextBlockId": "ret_b5"
+    },
+    "ret_b5": {
+      "id": "ret_b5",
+      "type": "button",
+      "text": "ХОЧУ — Челленджи",
+      "rightBlockId": "branch_5_challenge",
+      "nextBlockId": "ret_b6"
+    },
+    "ret_b6": {
+      "id": "ret_b6",
+      "type": "button",
+      "text": "🩶 ГРУППА «ПЕРЕРОЖДЕНИЕ»",
+      "rightBlockId": "branch_6_group"
     }
   }
 };
+
 
 export class ScenarioManager {
   private currentConfig: ScenarioConfig;
@@ -657,6 +827,18 @@ export class ScenarioManager {
             blockText: block.text,
             message: `${heading} имеет невалидный URL: "${block.url}".`,
             recommendation: "Ссылка должна начинаться с http:// или https:// и быть корректным URL-адресом."
+          });
+        }
+      }
+
+      // Проверка файлов и аудио
+      if (block.type === 'file' || block.type === 'audio') {
+        if (!block.url || !block.url.trim()) {
+          errors.push({
+            blockId: block.id,
+            blockText: block.text,
+            message: `${heading} не содержит прикрепленный файл или ссылку.`,
+            recommendation: "Загрузите файл или укажите путь/URL к медиафайлу."
           });
         }
       }

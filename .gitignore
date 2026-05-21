@@ -6,4 +6,6 @@ coverage/
 *.log
 .env*
 !.env.example
+scenario.json
+scenario-draft.json
 123.md

@@ -29,7 +29,9 @@ import {
   Lock,
   Link,
   Check,
-  AlertCircle
+  AlertCircle,
+  Minus,
+  Focus
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
@@ -61,10 +63,11 @@ interface BotStatus {
 
 interface ScenarioBlock {
   id: string;
-  type: "text" | "button" | "link" | "back" | "menu" | "pause" | "wait_button";
+  type: "text" | "button" | "link" | "back" | "menu" | "pause" | "wait_button" | "file" | "audio";
   text?: string;
   url?: string;
   seconds?: number;
+  isOnce?: boolean;
   nextBlockId?: string | null;
   rightBlockId?: string | null;
 }
@@ -78,6 +81,7 @@ interface ScenarioMenuButton {
 interface ScenarioConfig {
   telegramBotToken: string;
   contactLink: string;
+  startBlockId?: string;
   menu: ScenarioMenuButton[];
   blocks: Record<string, ScenarioBlock>;
 }
@@ -156,6 +160,43 @@ export default function App() {
   const [isDraggingCanvas, setIsDraggingCanvas] = useState<boolean>(false);
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
+  const canvasRef = useRef<HTMLDivElement>(null);
+
+  // Обработка Zoom через колесико (с привязкой к курсору)
+  useEffect(() => {
+    const el = canvasRef.current;
+    if (!el) return;
+
+    const handleWheel = (e: WheelEvent) => {
+      // Предотвращаем стандартный скролл страницы и масштабирование браузера
+      e.preventDefault();
+
+      const rect = el.getBoundingClientRect();
+      const mouseX = e.clientX - rect.left;
+      const mouseY = e.clientY - rect.top;
+      const zoomDelta = e.deltaY * -0.002;
+
+      setZoom((prevZoom) => {
+        const newZoom = Math.min(Math.max(0.2, prevZoom + zoomDelta), 2);
+        if (newZoom === prevZoom) return prevZoom;
+
+        setPan((prevPan) => {
+          const canvasX = (mouseX - prevPan.x) / prevZoom;
+          const canvasY = (mouseY - prevPan.y) / prevZoom;
+
+          return {
+            x: mouseX - canvasX * newZoom,
+            y: mouseY - canvasY * newZoom
+          };
+        });
+
+        return newZoom;
+      });
+    };
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  }, []);
 
   // Копирование в буфер
   const [copiedText, setCopiedText] = useState("");
@@ -330,6 +371,12 @@ export default function App() {
       if (res.ok) {
         const data = await res.json();
         const conf = data.draft as ScenarioConfig;
+        
+        // Базовые фоллбеки для защиты от старых или пустых конфигов
+        if (!conf.blocks) conf.blocks = {};
+        if (!conf.menu) conf.menu = [];
+        if (!conf.startBlockId) conf.startBlockId = "start_node";
+
         setScenario(conf);
         
         // Установка токена и ссылки для формы настроек
@@ -341,7 +388,9 @@ export default function App() {
         setHistoryIndex(0);
         setHasUnsavedChanges(data.hasDraft);
 
-        if (conf.menu && conf.menu.length > 0) {
+        // НЕ ограничиваем выбранный пункт меню первым, так как вся логика на одной доске
+        // Если меню есть, пусть выделен первый, чисто чтобы подсветка была
+        if (conf.menu && conf.menu.length > 0 && !selectedMenuId) {
           setSelectedMenuId(conf.menu[0].id);
         }
       }
@@ -552,9 +601,9 @@ export default function App() {
     const newBlock: ScenarioBlock = {
       id: newId,
       type: type,
-      text: type === "pause" ? "" : "Новая карточка. Отредактируйте текст...",
+      text: type === "pause" ? "" : (type === "file" ? "Прикрепленный файл" : type === "audio" ? "Аудиозапись" : "Новая карточка. Отредактируйте текст..."),
       seconds: type === "pause" ? 5 : undefined,
-      url: type === "link" ? "https://" : undefined
+      url: type === "link" ? "https://" : (type === "file" || type === "audio") ? "" : undefined
     };
 
     const updatedBlocks = { ...scenario.blocks };
@@ -602,7 +651,7 @@ export default function App() {
     });
 
     // Ищем в блоках
-    Object.values(blocksCopy).forEach((b) => {
+    Object.values(blocksCopy).forEach((b: any) => {
       if (b.nextBlockId === blockId) {
         b.nextBlockId = nextId;
         parentFound = true;
@@ -636,10 +685,10 @@ export default function App() {
     // Найдем начало цепочки (старт меню кнопки, либо из rightBlockId какой-то кнопки)
     let startBlockId: string | null = null;
     let parentId: string | null = null;
-    let parentRel: "next" | "right" | "menu" = "menu";
+    let parentRel: string = "menu";
 
     // Пытаемся найти родительский блок
-    Object.values(scenario.blocks).forEach((b) => {
+    Object.values(scenario.blocks).forEach((b: any) => {
       if (b.nextBlockId === blockId) {
         parentId = b.id;
         parentRel = "next";
@@ -687,9 +736,9 @@ export default function App() {
 
       // Найдем прадедушку
       let grandId: string | null = null;
-      let grandRel: "next" | "right" | "menu" = "menu";
+      let grandRel: string = "menu";
 
-      Object.values(scenario.blocks).forEach((b) => {
+      Object.values(scenario.blocks).forEach((b: any) => {
         if (b.nextBlockId === parentId) {
           grandId = b.id;
           grandRel = "next";
@@ -746,6 +795,42 @@ export default function App() {
       ...scenario,
       blocks: updatedBlocks
     });
+  };
+
+  // ЗАГРУЗКА МЕДИАФАЙЛОВ И ДОКУМЕНТОВ НА СЕРВЕР И ПРИВЯЗКА К КАРТОЧКЕ
+  const handleFileUploadAsync = async (file: File, blockId: string) => {
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      showToast("Загрузка файла...");
+      
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${authToken}`
+        },
+        body: formData
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({ error: "Unknown error" }));
+        showToast(`Ошибка загрузки: ${errData.error || res.statusText}`);
+        return;
+      }
+
+      const result = await res.json();
+      if (result.success && result.url) {
+        handleUpdateBlockField(blockId, { url: result.url });
+        const b = scenario?.blocks?.[blockId];
+        if (b && !b.text) {
+          handleUpdateBlockField(blockId, { text: result.name });
+        }
+        showToast("Файл успешно загружен!");
+      }
+    } catch (e: any) {
+      showToast(`Не удалось загрузить файл: ${e.message || e}`);
+    }
   };
 
   // ДОБАВЛЕНИЕ НОВОЙ КНОПКИ В ГЛАВНОЕ МЕНЮ
@@ -1125,141 +1210,107 @@ export default function App() {
                 </div>
 
                 {/* Основная рабочая сетка */}
-                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                <div className="flex-1 mt-4 relative h-[75vh]">
                   
-                  {/* Левая боковая панель: Вкладки меню */}
-                  <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs space-y-4">
-                    <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                      <h3 className="text-xs font-black text-slate-800 uppercase tracking-wide">Главное меню бота</h3>
-                      <button 
-                        onClick={() => setAddingMenuBtn(!addingMenuBtn)}
-                        className="text-slate-400 hover:text-emerald-600 transition-colors"
-                      >
-                        <Plus className="h-4 w-4" />
+                  {/* Рабочая область: Miro-доска */}
+                  <div className="w-full h-full border border-slate-200 rounded-xl overflow-hidden shadow-xs relative bg-slate-50">
+                    
+                    {/* Кнопки сброса масштаба */}
+                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex bg-white/90 backdrop-blur border border-slate-200 shadow-md rounded-xl overflow-hidden p-1 space-x-1">
+                      <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"><Minus className="h-4 w-4" /></button>
+                      <div className="flex items-center px-2 min-w-[60px] justify-center text-xs font-bold text-slate-600">
+                        {Math.round(zoom * 100)}%
+                      </div>
+                      <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"><Plus className="h-4 w-4" /></button>
+                      <div className="w-[1px] h-5 bg-slate-200 self-center mx-1" />
+                      <button onClick={() => { setZoom(1); setPan({x:0, y:0}); }} className="px-3 flex items-center space-x-1.5 text-xs font-bold text-slate-600 hover:bg-rose-50 hover:text-rose-600 rounded-lg transition-colors">
+                        <Focus className="h-3.5 w-3.5" />
+                        <span>СБРОС ВИДА</span>
                       </button>
                     </div>
 
-                    {/* Поле добавления новой инлайн кнопки меню */}
-                    {addingMenuBtn && (
-                      <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/60 text-xs space-y-2">
-                        <input
-                          type="text"
-                          placeholder="Название кнопки меню..."
-                          value={newMenuBtnText}
-                          onChange={(e) => setNewMenuBtnText(e.target.value)}
-                          className="w-full px-2 py-1.5 border border-slate-300 rounded focus:ring-1 focus:ring-emerald-400 focus:outline-none"
-                        />
-                        <div className="flex justify-end space-x-1">
-                          <button
-                            onClick={() => setAddingMenuBtn(false)}
-                            className="px-2 py-1 border border-slate-200 text-slate-600 rounded bg-white"
-                          >
-                            Отмена
-                          </button>
-                          <button
-                            onClick={handleAddMenuButton}
-                            className="px-2 py-1 bg-emerald-600 text-white font-bold rounded hover:bg-emerald-700 transition-colors"
-                          >
-                            Создать
-                          </button>
-                        </div>
-                      </div>
-                    )}
+                    {/* Список карточек в формате Miro-доски */}
+                    {(() => {
+                      const coords: Record<string, { row: number; col: number }> = {};
+                      const visited = new Set<string>();
+                      
+                      // Находим корневые элементы (на которые никто не ссылается)
+                      const inDegree: Record<string, number> = {};
+                      Object.keys(scenario.blocks).forEach(id => inDegree[id] = 0);
+                      
+                      Object.values(scenario.blocks).forEach((b: ScenarioBlock) => {
+                        if (b.nextBlockId) inDegree[b.nextBlockId] = (inDegree[b.nextBlockId] || 0) + 1;
+                        if (b.rightBlockId) inDegree[b.rightBlockId] = (inDegree[b.rightBlockId] || 0) + 1;
+                        if (b.type === 'menu') {
+                          scenario.menu.forEach(m => {
+                            if (m.startBlockId) {
+                              inDegree[m.startBlockId] = (inDegree[m.startBlockId] || 0) + 1;
+                            }
+                          });
+                        }
+                      });
 
-                    <div className="space-y-1.5">
-                      {scenario.menu.map((btn) => {
-                        const isSel = btn.id === selectedMenuId;
-                        return (
-                          <div 
-                            key={btn.id}
-                            className={`flex justify-between items-center group px-3 py-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${
-                              isSel ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "hover:bg-slate-50 text-slate-600"
-                            }`}
-                            onClick={() => setSelectedMenuId(btn.id)}
-                          >
-                            <span className="truncate max-w-[150px]">{btn.text}</span>
-                            
-                            {/* Удалить кнопку меню */}
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handleDeleteMenuButton(btn.id);
-                              }}
-                              className="opacity-0 group-hover:opacity-100 transition-opacity text-slate-400 hover:text-rose-600 bg-transparent border-none cursor-pointer"
-                            >
-                              <Trash2 className="h-3.5 w-3.5" />
-                            </button>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
+                      let currentRow = 0;
 
-                  {/* Правая рабочая область: Miro-доска */}
-                  <div className="lg:col-span-3 space-y-4">
-                    {selectedMenuId && selectedMenuBtn ? (
-                      <div>
+                      // Рекурсивный автоматический расчет сетки связей 2D
+                      function place(id: string | null | undefined, r: number, c: number) {
+                        if (!id || !scenario || visited.has(id)) return;
+                        visited.add(id);
+
+                        let finalR = r;
+                        let finalC = c;
                         
-                        {/* Изменение названия вкладки меню */}
-                        <div className="bg-white p-4 rounded-xl border border-slate-200/80 shadow-xs mb-4 flex justify-between items-center">
-                          <div className="flex-1 max-w-sm">
-                            <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1">Редактируемый раздел меню:</label>
-                            <input
-                              type="text"
-                              value={selectedMenuBtn.text}
-                              onChange={(e) => {
-                                const updated = scenario.menu.map((b) => 
-                                  b.id === selectedMenuId ? { ...b, text: e.target.value } : b
-                                );
-                                updateScenarioState({ ...scenario, menu: updated });
-                              }}
-                              className="w-full font-bold text-md text-slate-800 border-none px-0 py-0 focus:ring-0 focus:outline-none focus:border-none focus-visible:outline-none"
-                            />
-                          </div>
-                          
-                          <div className="text-[11px] text-slate-400 font-medium">
-                            Для этого раздела запущено прохождение сценария
-                          </div>
-                        </div>
+                        // Защита от наложения карточек друг на друга: если ячейка занята, сдвигаем правее
+                        while (Object.values(coords).some(p => p.row === finalR && p.col === finalC)) {
+                          finalC += 1;
+                        }
 
-                        {/* Список карточек в формате Miro-доски */}
-                        {(() => {
-                          const coords: Record<string, { row: number; col: number }> = {};
-                          const visited = new Set<string>();
+                        coords[id] = { row: finalR, col: finalC };
 
-                          // Рекурсивный автоматический расчет сетки связей 2D
-                          function place(id: string | null | undefined, r: number, c: number) {
-                            if (!id || !scenario || visited.has(id)) return;
-                            visited.add(id);
-
-                            let finalR = r;
-                            let finalC = c;
-                            
-                            // Защита от наложения карточек друг на друга: если ячейка занята, сдвигаем правее
-                            while (Object.values(coords).some(p => p.row === finalR && p.col === finalC)) {
-                              finalC += 1;
-                            }
-
-                            coords[id] = { row: finalR, col: finalC };
-
-                            const b = scenario.blocks[id];
-                            if (b) {
-                              // Сначала ответвления выбора (вправо)
-                              if (b.rightBlockId) {
-                                place(b.rightBlockId, finalR, finalC + 1);
-                              }
-                              // Затем последующая цепочка диалога (вниз)
-                              if (b.nextBlockId) {
-                                place(b.nextBlockId, finalR + 1, finalC);
-                              }
-                            }
+                        const b = scenario.blocks[id];
+                        if (b) {
+                          // Сначала ответвления выбора (вправо)
+                          if (b.rightBlockId) {
+                            place(b.rightBlockId, finalR, finalC + 1);
                           }
-
-                          if (selectedMenuBtn.startBlockId) {
-                            place(selectedMenuBtn.startBlockId, 0, 0);
+                          // Затем последующая цепочка диалога (вниз)
+                          if (b.nextBlockId) {
+                            place(b.nextBlockId, finalR + 1, finalC);
                           }
+                          // Узел типа menu ветвится на все пункты главного меню
+                          if (b.type === 'menu') {
+                            let menuC = finalC;
+                            scenario.menu.forEach(m => {
+                              if (m.startBlockId) {
+                                place(m.startBlockId, finalR + 1, menuC);
+                                menuC += 1;
+                              }
+                            });
+                          }
+                        }
+                        
+                        if (finalR > currentRow) {
+                          currentRow = finalR;
+                        }
+                      }
 
-                          // Ищем потерянные («сиротские») блоки и выстраиваем их в крайний правый столбец
+                      // 1. Сначала размещаем стартовый блок
+                      let rootRowOffset = 0;
+                      
+                      if (scenario.startBlockId && !visited.has(scenario.startBlockId)) {
+                        place(scenario.startBlockId, rootRowOffset, 0);
+                        rootRowOffset = currentRow + 2;
+                      }
+
+                      // 2. Затем размещаем остальные корневые блоки
+                      Object.keys(inDegree).forEach(id => {
+                        if (inDegree[id] === 0 && !visited.has(id)) {
+                          place(id, rootRowOffset, 0);
+                          rootRowOffset = currentRow + 2;
+                        }
+                      });
+
+                          // 3. Выстраиваем оставшиеся потерянные («сиротские») блоки в крайний правый столбец
                           let maxCol = 0;
                           Object.values(coords).forEach(p => {
                             if (p.col > maxCol) maxCol = p.col;
@@ -1273,6 +1324,7 @@ export default function App() {
                             }
                           });
 
+
                           // Базовая геометрия расположения на доске Miro
                           const cardWidth = 280;
                           const cardHeight = 135;
@@ -1280,11 +1332,12 @@ export default function App() {
                           const rowHeight = 220;
 
                           return (
-                            <div className="flex flex-col lg:flex-row gap-5 items-stretch h-[660px]">
+                            <div className="flex flex-col lg:flex-row gap-5 items-stretch h-[660px] w-full">
                               
                               {/* ЗАБОР КАНВАСА РИСОВАНИЯ */}
                               <div 
-                                className="flex-1 min-h-[400px] lg:h-full bg-slate-50 relative overflow-hidden border border-slate-200 rounded-2xl select-none"
+                                ref={canvasRef}
+                                className="flex-1 bg-slate-50 relative overflow-hidden border border-slate-200 rounded-2xl select-none touch-none"
                                 style={{ cursor: isDraggingCanvas ? 'grabbing' : 'grab' }}
                                 onMouseDown={handleCanvasMouseDown}
                                 onMouseMove={handleCanvasMouseMove}
@@ -1314,27 +1367,14 @@ export default function App() {
                                   {/* Слой SVG соединений */}
                                   <svg className="absolute inset-0 pointer-events-none overflow-visible w-full h-full">
                                     <defs>
-                                      <marker
-                                        id="arrow-next"
-                                        viewBox="0 0 10 10"
-                                        refX="8"
-                                        refY="5"
-                                        markerWidth="6"
-                                        markerHeight="6"
-                                        orient="auto"
-                                      >
+                                      <marker id="arrow-next" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
                                         <path d="M 0 1 L 10 5 L 0 9 z" fill="#10b981" />
                                       </marker>
-                                      <marker
-                                        id="arrow-right"
-                                        viewBox="0 0 10 10"
-                                        refX="8"
-                                        refY="5"
-                                        markerWidth="6"
-                                        markerHeight="6"
-                                        orient="auto"
-                                      >
+                                      <marker id="arrow-right" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
                                         <path d="M 0 1 L 10 5 L 0 9 z" fill="#3b82f6" />
+                                      </marker>
+                                      <marker id="arrow-menu" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+                                        <path d="M 0 1 L 10 5 L 0 9 z" fill="#f59e0b" />
                                       </marker>
                                     </defs>
 
@@ -1389,6 +1429,31 @@ export default function App() {
                                             />
                                           </g>
                                         );
+                                      }
+
+                                      // Связи ко всем рут-поинтам пунктов меню у блока "menu"
+                                      if (block.type === 'menu') {
+                                        scenario.menu.forEach((m, idx) => {
+                                          if (m.startBlockId && coords[m.startBlockId]) {
+                                            const rp = coords[m.startBlockId];
+                                            const startX = x + cardWidth / 4 + (cardWidth / 2) * (idx / Math.max(1, scenario.menu.length));
+                                            const startY = y + cardHeight;
+                                            const endX = rp.col * colWidth + 40 + cardWidth / 2;
+                                            const endY = rp.row * rowHeight + 40;
+                                            lines.push(
+                                              <g key={`${id}-to-menu-${m.id}`} className="opacity-40 hover:opacity-90 transition-opacity">
+                                                <path 
+                                                  d={getBezierPath(startX, startY, endX, endY, false)} 
+                                                  fill="none" 
+                                                  stroke="#f59e0b" 
+                                                  strokeWidth="2"
+                                                  strokeDasharray="6 6"
+                                                  markerEnd="url(#arrow-menu)" 
+                                                />
+                                              </g>
+                                            );
+                                          }
+                                        });
                                       }
 
                                       return lines;
@@ -1453,6 +1518,8 @@ export default function App() {
                                           block.type === 'pause' ? 'bg-purple-50 border-purple-100 text-purple-700 font-bold' :
                                           block.type === 'back' ? 'bg-amber-50 border-amber-100 text-amber-800' :
                                           block.type === 'menu' ? 'bg-emerald-50 border-emerald-100 text-emerald-800' :
+                                          block.type === 'file' ? 'bg-teal-50 border-teal-100 text-teal-850 font-bold' :
+                                          block.type === 'audio' ? 'bg-indigo-50 border-indigo-100 text-indigo-850 font-bold' :
                                           'bg-rose-50 border-rose-100 text-rose-800'
                                         }`}>
                                           <div className="flex items-center space-x-2 min-w-0">
@@ -1464,6 +1531,8 @@ export default function App() {
                                               {block.type === 'back' && "↩️"}
                                               {block.type === 'menu' && "🏠"}
                                               {block.type === 'wait_button' && "🚦"}
+                                              {block.type === 'file' && "📁"}
+                                              {block.type === 'audio' && "🎵"}
                                             </span>
                                             <span className="text-[10px] font-black uppercase tracking-wider truncate">
                                               {block.type === 'text' && "Описание"}
@@ -1473,6 +1542,8 @@ export default function App() {
                                               {block.type === 'back' && "Кнопка Назад"}
                                               {block.type === 'menu' && "Главное меню"}
                                               {block.type === 'wait_button' && "Ожидание действия"}
+                                              {block.type === 'file' && "Файл документ"}
+                                              {block.type === 'audio' && "Аудиофайл"}
                                             </span>
                                           </div>
                                           
@@ -1493,6 +1564,22 @@ export default function App() {
                                               <div className="font-extrabold text-slate-800 truncate">{block.text || "Ссылка без текста"}</div>
                                               <div className="text-[9px] font-mono text-indigo-500 truncate">{block.url || "https://"}</div>
                                             </div>
+                                          ) : block.type === 'file' ? (
+                                            <div className="space-y-1">
+                                              <div className="font-extrabold text-slate-800 truncate">{block.text || "Прикрепленный файл"}</div>
+                                              <div className="text-[9px] text-teal-650 bg-teal-50/50 p-1 border border-teal-100 rounded truncate flex items-center gap-1 font-mono">
+                                                <span>📎</span>
+                                                <span>{block.url || "Файл не загружен..."}</span>
+                                              </div>
+                                            </div>
+                                          ) : block.type === 'audio' ? (
+                                            <div className="space-y-1">
+                                              <div className="font-extrabold text-slate-800 truncate">{block.text || "Аудиозапись"}</div>
+                                              <div className="text-[9px] text-indigo-650 bg-indigo-50/50 p-1 border border-indigo-100 rounded truncate flex items-center gap-1 font-mono font-bold">
+                                                <span>🔊</span>
+                                                <span>{block.url || "Файл не загружен..."}</span>
+                                              </div>
+                                            </div>
                                           ) : (
                                             <p className="text-slate-600 font-medium line-clamp-3 leading-relaxed">
                                               {block.text || <em className="text-slate-400">Текст не настроен...</em>}
@@ -1502,23 +1589,41 @@ export default function App() {
 
                                         {/* ИНТЕРАКТИВНЫЕ ПЛЮСИКИ ДОБАВЛЕНИЯ КАРТОЧЕК */}
                                         {/* Плюс вниз (relation: next) */}
-                                        {!block.nextBlockId && (
-                                          <button
-                                            className="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-5 h-5 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center border border-white shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-all z-25"
-                                            onClick={(e) => {
-                                              e.stopPropagation();
-                                              setActiveAddPopover({ blockId: id, relation: "next" });
-                                            }}
-                                            title="Вставить следующее действие по цепочке ниже"
-                                          >
-                                            <Plus className="h-3 w-3" />
-                                          </button>
+                                        <button
+                                          className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center border border-white shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-all z-25"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            setActiveAddPopover({ blockId: id, relation: "next" });
+                                          }}
+                                          title="Вставить следующее действие по цепочке ниже"
+                                        >
+                                          <Plus className="h-3 w-3" />
+                                        </button>
+
+                                        {/* Кнопки перемещения вверх/вниз для цепочки */}
+                                        {isSelected && (
+                                          <div className="absolute top-1/2 -left-8 -translate-y-1/2 flex flex-col space-y-1 shadow-lg bg-white rounded-lg border border-slate-200">
+                                            <button 
+                                              onClick={(e) => { e.stopPropagation(); handleMoveBlock(id, "up"); }}
+                                              className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-t-lg transition-colors border-b border-slate-100"
+                                              title="Передвинуть блок вверх по цепочке"
+                                            >
+                                              <ArrowUp className="w-4 h-4" />
+                                            </button>
+                                            <button 
+                                              onClick={(e) => { e.stopPropagation(); handleMoveBlock(id, "down"); }}
+                                              className="p-1 text-slate-400 hover:text-emerald-600 hover:bg-emerald-50 rounded-b-lg transition-colors"
+                                              title="Передвинуть блок вниз по цепочке"
+                                            >
+                                              <ArrowDown className="w-4 h-4" />
+                                            </button>
+                                          </div>
                                         )}
 
                                         {/* Плюс вправо (relation: right) для разветвления на кнопках */}
-                                        {block.type === 'button' && !block.rightBlockId && (
+                                        {block.type === 'button' && (
                                           <button
-                                            className="absolute right-0 top-1/2 translate-x-1/2 -translate-y-1/2 w-5 h-5 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center border border-white shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-all z-25"
+                                            className="absolute -right-3 top-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-blue-600 hover:bg-blue-700 text-white flex items-center justify-center border border-white shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-all z-25"
                                             onClick={(e) => {
                                               e.stopPropagation();
                                               setActiveAddPopover({ blockId: id, relation: "right" });
@@ -1534,7 +1639,7 @@ export default function App() {
                                 </div>
 
                                 {/* ИНСТРУМЕНТАЛЬНАЯ HUD-ПАНЕЛЬ МАСШТАБА И ВИДА */}
-                                <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-xs px-3 py-2 rounded-xl border border-slate-200/85 shadow-md flex items-center space-x-3 text-xs font-bold text-slate-700 z-30 pointer-events-auto">
+                                <div className="absolute bottom-4 left-4 bg-white/95 backdrop-blur-xs px-3 py-2 rounded-xl border border-slate-200/85 shadow-md flex items-center space-x-3 text-xs font-bold text-slate-705 z-30 pointer-events-auto">
                                   <div className="flex items-center space-x-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
                                     <button 
                                       className="px-2 py-0.5 hover:bg-white rounded transition-colors text-slate-500 hover:text-slate-800 text-xs font-black"
@@ -1606,6 +1711,8 @@ export default function App() {
                                           <option value="text">📝 Сообщение-Текст</option>
                                           <option value="button">🔘 Кнопка выбора</option>
                                           <option value="link">🔗 Веб-ссылка URL</option>
+                                          <option value="file">📁 Файл документ</option>
+                                          <option value="audio">🎵 Аудиофайл</option>
                                           <option value="pause">⏳ Пауза (задержка)</option>
                                           <option value="back">↩️ Кнопка «Назад»</option>
                                           <option value="menu">🏠 Кнопка «В меню»</option>
@@ -1632,23 +1739,64 @@ export default function App() {
                                               type="text"
                                               value={activeBlock.text || ""}
                                               onChange={(e) => handleUpdateBlockField(activeBlock.id, { text: e.target.value })}
-                                              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 font-bold text-slate-700"
+                                              placeholder="Текст на кнопке"
+                                              className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-700 font-bold"
                                             />
                                           )}
                                         </div>
                                       )}
 
-                                      {/* 3. Ссылка URL для внешних кнопок */}
-                                      {activeBlock.type === "link" && (
-                                        <div>
-                                          <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Веб-ссылка перехода (URL):</label>
+                                      {/* 2.5 Настройки кнопки */}
+                                      {activeBlock.type === "button" && (
+                                        <div className="flex items-center space-x-2 mt-2">
+                                          <input
+                                            type="checkbox"
+                                            id="btn-isOnce"
+                                            checked={!!activeBlock.isOnce}
+                                            onChange={(e) => handleUpdateBlockField(activeBlock.id, { isOnce: e.target.checked })}
+                                            className="rounded text-emerald-500 focus:ring-emerald-400 focus:ring-offset-0 border-slate-300"
+                                          />
+                                          <label htmlFor="btn-isOnce" className="text-[10px] font-bold text-slate-600 block cursor-pointer select-none">
+                                            Однократное действие (нельзя нажать повторно)
+                                          </label>
+                                        </div>
+                                      )}
+
+                                      {/* 3. Ссылка URL или загрузка медиафайла */}
+                                      {(activeBlock.type === "link" || activeBlock.type === "file" || activeBlock.type === "audio") && (
+                                        <div className="space-y-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                                          <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
+                                            {activeBlock.type === "link" ? "Веб-ссылка перехода (URL):" : "Ссылка или путь к файлу:"}
+                                          </label>
                                           <input
                                             type="text"
-                                            placeholder="https://"
+                                            placeholder={activeBlock.type === "link" ? "https://" : "/uploads/file или https://"}
                                             value={activeBlock.url || ""}
                                             onChange={(e) => handleUpdateBlockField(activeBlock.id, { url: e.target.value })}
-                                            className="w-full text-[11px] px-2.5 py-1.5 border border-slate-200 rounded-lg font-mono text-indigo-650 focus:outline-none focus:ring-1 focus:ring-indigo-400"
+                                            className="w-full text-[11px] px-2.5 py-1.5 border border-slate-200 bg-white rounded-lg font-mono text-indigo-650 focus:outline-none focus:ring-1 focus:ring-indigo-400"
                                           />
+
+                                          {(activeBlock.type === "file" || activeBlock.type === "audio") && (
+                                            <div className="pt-2 border-t border-slate-200">
+                                              <span className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">Загрузить файл с компьютера:</span>
+                                              <label className="flex items-center justify-center border border-dashed border-slate-350 bg-white rounded-lg p-2 hover:bg-emerald-50 hover:border-emerald-400 transition-colors cursor-pointer select-none">
+                                                <input
+                                                  type="file"
+                                                  accept={activeBlock.type === "audio" ? "audio/*" : "*/*"}
+                                                  className="hidden"
+                                                  onChange={(e) => {
+                                                    const file = e.target.files?.[0];
+                                                    if (file) {
+                                                      handleFileUploadAsync(file, activeBlock.id);
+                                                    }
+                                                  }}
+                                                />
+                                                <div className="flex items-center space-x-1.5 text-[10px] font-extrabold text-slate-650 hover:text-emerald-700">
+                                                  <span>📤 Выбрать и загрузить...</span>
+                                                </div>
+                                              </label>
+                                            </div>
+                                          )}
                                         </div>
                                       )}
 
@@ -1749,14 +1897,7 @@ export default function App() {
                         })()}
 
                       </div>
-                    ) : (
-                      <div className="p-12 text-center bg-white border border-slate-200 rounded-xl">
-                        Создайте или выберите вкладку главного меню слева.
-                      </div>
-                    )}
-                  </div>
-
-                </div>
+                    </div>
 
               </div>
             )}
@@ -2193,6 +2334,22 @@ WantedBy=multi-user.target`}
               >
                 <span>🚦</span>
                 <span>Ожидание нажатия кнопок</span>
+              </button>
+
+              <button 
+                onClick={() => handleAddBlock(activeAddPopover.blockId, activeAddPopover.relation, "file")}
+                className="flex items-center space-x-2.5 p-2 bg-slate-50 hover:bg-teal-50 text-slate-700 hover:text-teal-700 font-bold rounded-lg transition-colors border border-slate-200"
+              >
+                <span>📁</span>
+                <span>Добавить файл или документ</span>
+              </button>
+
+              <button 
+                onClick={() => handleAddBlock(activeAddPopover.blockId, activeAddPopover.relation, "audio")}
+                className="flex items-center space-x-2.5 p-2 bg-slate-50 hover:bg-indigo-50 text-slate-700 hover:text-indigo-700 font-bold rounded-lg transition-colors border border-slate-200"
+              >
+                <span>🎵</span>
+                <span>Добавить аудиозапись / звук</span>
               </button>
 
             </div>

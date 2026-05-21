@@ -1,4 +1,6 @@
-import { Bot, InlineKeyboard, Keyboard, Context } from "grammy";
+import { Bot, InlineKeyboard, Keyboard, Context, InputFile } from "grammy";
+import fs from "fs";
+import path from "path";
 import { botConfig } from "./botConfig";
 import { sessionManager, UserSession } from "./botSession";
 import { scenarioManager, ScenarioBlock } from "./scenarioManager";
@@ -273,7 +275,91 @@ export class TelegramBotService {
 
       switch (block.type) {
         case "text": {
-          await ctx.reply(block.text, { parse_mode: "HTML" });
+          if (block.nextBlockId && config.blocks[block.nextBlockId] && config.blocks[block.nextBlockId].type === "button") {
+            // Attach inline buttons directly to this text
+            const buttonsGroup: ScenarioBlock[] = [];
+            let current: ScenarioBlock | null = config.blocks[block.nextBlockId];
+            while (current && current.type === "button") {
+              buttonsGroup.push(current);
+              current = current.nextBlockId ? config.blocks[current.nextBlockId] : null;
+            }
+
+            const btnKb = new InlineKeyboard();
+            buttonsGroup.forEach((btn) => {
+              const customText = btn.text || '';
+              const isChecked = session.checkedButtons?.includes(btn.id);
+              const label = btn.url ? customText : (btn.rightBlockId ? customText : (isChecked ? `✅ ${customText}` : customText));
+              
+              if (btn.url) {
+                btnKb.url(label, btn.url).row();
+              } else {
+                btnKb.text(label, `blk_btn_${btn.id}`).row();
+              }
+            });
+
+            await ctx.reply(block.text, { parse_mode: "HTML", reply_markup: btnKb });
+            // We do NOT execute nextBlockId here because it's a button and buttons wait for user click.
+          } else {
+            await ctx.reply(block.text, { parse_mode: "HTML" });
+            if (block.nextBlockId) {
+              await this.executeBlock(ctx, block.nextBlockId, userId);
+            }
+          }
+          break;
+        }
+        case "file": {
+          if (block.url) {
+            try {
+              if (block.url.startsWith("http://") || block.url.startsWith("https://")) {
+                await ctx.replyWithDocument(block.url);
+              } else {
+                let localPath = block.url;
+                if (localPath.startsWith("/")) {
+                  localPath = localPath.substring(1);
+                }
+                const fullPath = path.join(process.cwd(), localPath);
+                if (fs.existsSync(fullPath)) {
+                  await ctx.replyWithDocument(new InputFile(fullPath));
+                } else {
+                  await ctx.reply(`[Файл не найден на сервере: ${block.url}]`);
+                }
+              }
+            } catch (err: any) {
+              this.addLog(`Failed to send file ${block.url}: ${err.message || err}`);
+              await ctx.reply(`[Не удалось отправить файл: ${block.url}]`);
+            }
+          } else {
+            await ctx.reply(block.text || "Прикрепленный файл");
+          }
+          if (block.nextBlockId) {
+            await this.executeBlock(ctx, block.nextBlockId, userId);
+          }
+          break;
+        }
+        case "audio": {
+          if (block.url) {
+            try {
+              if (block.url.startsWith("http://") || block.url.startsWith("https://")) {
+                await ctx.replyWithAudio(block.url);
+              } else {
+                let localPath = block.url;
+                if (localPath.startsWith("/")) {
+                  localPath = localPath.substring(1);
+                }
+                const fullPath = path.join(process.cwd(), localPath);
+                if (fs.existsSync(fullPath)) {
+                  await ctx.replyWithAudio(new InputFile(fullPath));
+                } else {
+                  await ctx.reply(`[Аудиофайл не найден на сервере: ${block.url}]`);
+                }
+              }
+            } catch (err: any) {
+              this.addLog(`Failed to send audio ${block.url}: ${err.message || err}`);
+              await ctx.reply(`[Не удалось отправить аудиофайл: ${block.url}]`);
+            }
+          } else {
+            await ctx.reply(block.text || "Аудиозапись");
+          }
           if (block.nextBlockId) {
             await this.executeBlock(ctx, block.nextBlockId, userId);
           }
@@ -328,11 +414,16 @@ export class TelegramBotService {
           break;
         }
         case "wait_button": {
-          // Блок приостанавливает выполнение. Ожидаем нажатия кнопки
+          // Блок приостанавливает выполнение. Ожидаем нажатия кнопки.
+          // Но если этот блок вызван вручную (из обработчика кнопки),
+          // он может служить "пропускным пунктом" к следующему блоку.
+          if (block.nextBlockId) {
+             await this.executeBlock(ctx, block.nextBlockId, userId);
+          }
           break;
         }
         case "button": {
-          // Находим все кнопки в вертикальной последовательности для группировки в один Inline Keyboard
+          // Fallback if button is executed directly without a text block
           const buttonsGroup: ScenarioBlock[] = [];
           let current: ScenarioBlock | null = block;
           while (current && current.type === "button") {
@@ -343,8 +434,14 @@ export class TelegramBotService {
           const btnKb = new InlineKeyboard();
           buttonsGroup.forEach((btn) => {
             const isChecked = session.checkedButtons?.includes(btn.id);
-            const label = btn.rightBlockId ? btn.text : (isChecked ? `✅ ${btn.text}` : btn.text);
-            btnKb.text(label, `blk_btn_${btn.id}`).row();
+            const customText = btn.text || '';
+            const label = btn.url ? customText : (btn.rightBlockId ? customText : (isChecked ? `✅ ${customText}` : customText));
+            
+            if (btn.url) {
+              btnKb.url(label, btn.url).row();
+            } else {
+              btnKb.text(label, `blk_btn_${btn.id}`).row();
+            }
           });
 
           await ctx.reply("Выберите нужный вариант 👇", { reply_markup: btnKb });
@@ -512,55 +609,102 @@ export class TelegramBotService {
         const btn = config.blocks[btnId];
 
         if (btn) {
-          await ctx.answerCallbackQuery();
-          if (btn.rightBlockId) {
-            // Кнопка имеет связь вправо — переходим дальше по этой ветви!
-            await this.executeBlock(ctx, btn.rightBlockId, userId);
-          } else {
-            // Кнопка без правого продолжения — работает как простой чекбокс-галочка
-            if (!session.checkedButtons) {
-              session.checkedButtons = [];
-            }
-            const checked = [...session.checkedButtons];
-            const idx = checked.indexOf(btnId);
-            if (idx >= 0) {
-              checked.splice(idx, 1);
-            } else {
-              checked.push(btnId);
-            }
-            sessionManager.updateSession(userId, { checkedButtons: checked });
+          if (!session.checkedButtons) {
+            session.checkedButtons = [];
+          }
+          let checked = [...session.checkedButtons];
+          
+          if (btn.isOnce && checked.includes(btnId)) {
+            await ctx.answerCallbackQuery({ text: "Вы уже выбирали этот вариант 😊", show_alert: true });
+            return;
+          }
 
-            // Перерисовываем клавиатуру для всей вертикальной группы
-            try {
-              let startBtn = btn;
-              const allBlocks = Object.values(config.blocks);
-              let foundParent = true;
-              while (foundParent) {
-                const parent = allBlocks.find((b) => b.nextBlockId === startBtn.id && b.type === "button");
-                if (parent) {
-                  startBtn = parent;
-                } else {
-                  foundParent = false;
-                }
+          // Toggle check state unless it's one-time
+          if (!checked.includes(btnId)) {
+            checked.push(btnId);
+          } else if (!btn.isOnce) {
+            checked = checked.filter(id => id !== btnId);
+          }
+          
+          const updates: any = { checkedButtons: checked };
+          if (btn.isMenuUnlock) {
+            updates.menuUnlocked = true;
+          }
+          
+          sessionManager.updateSession(userId, updates);
+
+          // Если меню только что разблокировалось, обновим Reply Keyboard (отправив уведомление один раз)
+          if (btn.isMenuUnlock && !session.menuUnlocked) {
+             await ctx.reply("Доступно новое меню поддержки. Внизу экрана появилась кнопка «Вернуться в меню» 🤍", {
+               reply_markup: this.makeReplyKeyboard(true)
+             });
+          }
+
+          // Перерисовываем клавиатуру для всей вертикальной группы
+          try {
+            let startBtn = btn;
+            const allBlocks = Object.values(config.blocks);
+            let foundParent = true;
+            while (foundParent) {
+              const parent = allBlocks.find((b) => b.nextBlockId === startBtn.id && b.type === "button");
+              if (parent) {
+                startBtn = parent;
+              } else {
+                foundParent = false;
               }
+            }
 
-              const buttonsGroup: ScenarioBlock[] = [];
-              let current: ScenarioBlock | null = startBtn;
-              while (current && current.type === "button") {
-                buttonsGroup.push(current);
-                current = current.nextBlockId ? config.blocks[current.nextBlockId] : null;
-              }
+            const buttonsGroup: ScenarioBlock[] = [];
+            let current: ScenarioBlock | null = startBtn;
+            while (current && current.type === "button") {
+              buttonsGroup.push(current);
+              current = current.nextBlockId ? config.blocks[current.nextBlockId] : null;
+            }
 
-              const btnKb = new InlineKeyboard();
-              buttonsGroup.forEach((b) => {
-                const isCh = checked.includes(b.id);
-                const label = b.rightBlockId ? b.text : (isCh ? `✅ ${b.text}` : b.text);
+            const btnKb = new InlineKeyboard();
+            buttonsGroup.forEach((b) => {
+              const isCh = checked.includes(b.id);
+              const customText = b.text || '';
+              const label = b.url ? customText : (b.rightBlockId ? customText : (isCh ? `✅ ${customText}` : customText));
+              
+              if (b.url) {
+                btnKb.url(label, b.url).row();
+              } else {
                 btnKb.text(label, `blk_btn_${b.id}`).row();
-              });
+              }
+            });
 
-              await ctx.editMessageReplyMarkup({ reply_markup: btnKb });
-            } catch (markupErr) {
-              console.error("[Bot] Failed to update dynamic button checklist:", markupErr);
+            await ctx.editMessageReplyMarkup({ reply_markup: btnKb });
+          } catch (markupErr) {
+            console.error("[Bot] Failed to update dynamic button checklist:", markupErr);
+          }
+
+          await ctx.answerCallbackQuery();
+
+          // Поиск блока продолжения (Wait Button) после группы кнопок
+          let waitBlockId: string | null = null;
+          if (btn.rightBlockId) {
+            waitBlockId = btn.rightBlockId;
+          } else {
+            // Если нет линка вправо, ищем wait_button за концом группы кнопок
+            let currentInGroup: ScenarioBlock = btn;
+            while (currentInGroup.nextBlockId && config.blocks[currentInGroup.nextBlockId]?.type === "button") {
+              currentInGroup = config.blocks[currentInGroup.nextBlockId];
+            }
+            if (currentInGroup.nextBlockId && config.blocks[currentInGroup.nextBlockId]?.type === "wait_button") {
+              waitBlockId = currentInGroup.nextBlockId;
+            }
+          }
+
+          if (waitBlockId) {
+            if (!session.triggeredWaitBlocks) {
+              session.triggeredWaitBlocks = [];
+            }
+            if (!session.triggeredWaitBlocks.includes(waitBlockId)) {
+              const updatedWait = [...session.triggeredWaitBlocks, waitBlockId];
+              sessionManager.updateSession(userId, { triggeredWaitBlocks: updatedWait });
+              // Кнопка имеет связь вправо ИЛИ за группой стоит wait_button — переходим дальше!
+              await this.executeBlock(ctx, waitBlockId, userId);
             }
           }
         }
@@ -594,8 +738,19 @@ export class TelegramBotService {
       startedAt: new Date().toISOString(),
       lastStartTimestamp: timestampNow,
       checkedButtons: [],
-      historyBlocks: []
+      historyBlocks: [],
+      triggeredWaitBlocks: []
     });
+
+    const config = scenarioManager.loadConfig();
+
+    if (config.startBlockId && config.blocks[config.startBlockId]) {
+      // Отправляем системное сообщение для установки Reply Keyboard
+      const kb = this.makeReplyKeyboard(false);
+      await ctx.reply("Перезапуск бота...", { reply_markup: kb });
+      await this.executeBlock(ctx, config.startBlockId, userId);
+      return;
+    }
 
     // 2) Отправляем первое приветственное сообщение
     // Прикрепляем Reply-меню (пока только "Старт")

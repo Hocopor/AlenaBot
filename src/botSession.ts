@@ -20,6 +20,7 @@ export interface UserSession {
   // Состояния динамического конструктора сценариев
   checkedButtons?: string[];
   historyBlocks?: string[];
+  triggeredWaitBlocks?: string[];
   
   // Таймеры / Мьютексы для отложенных отправлений
   lastStartTimestamp: number; // Время последнего клика по /start
