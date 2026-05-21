@@ -1,6 +1,7 @@
 import { Bot, InlineKeyboard, Keyboard, Context, InputFile } from "grammy";
 import fs from "fs";
 import path from "path";
+import { botConfig } from "./botConfig";
 import { sessionManager, UserSession } from "./botSession";
 import { scenarioManager, ScenarioBlock } from "./scenarioManager";
 
@@ -413,7 +414,9 @@ export class TelegramBotService {
           break;
         }
         case "wait_button": {
-          // Ждем взаимодействия
+          if (block.nextBlockId) {
+            await this.executeBlock(ctx, block.nextBlockId, userId);
+          }
           break;
         }
         case "button": {
@@ -514,6 +517,7 @@ export class TelegramBotService {
              const waitId = lastInGroup.nextBlockId;
              const trig = session.triggeredWaitBlocks || [];
              if (!trig.includes(waitId)) {
+               this.addLog(`Triggering wait_button ${waitId} for user ${userId}`);
                sessionManager.updateSession(userId, { triggeredWaitBlocks: [...trig, waitId] });
                await this.executeBlock(ctx, waitId, userId);
              }
