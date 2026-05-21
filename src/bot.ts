@@ -824,9 +824,16 @@ export class TelegramBotService {
     const session = sessionManager.getSession(userId);
 
     if (session.menuUnlocked) {
-      await ctx.reply(botConfig.texts.backToMenuHeader, {
-        reply_markup: this.makeMainMenuKeyboard()
-      });
+      const config = scenarioManager.loadConfig();
+      const returnMenuItem = config.menu?.find(m => m.text === "Вернуться в меню");
+      
+      if (returnMenuItem && returnMenuItem.startBlockId) {
+         await this.executeBlock(ctx, returnMenuItem.startBlockId, userId);
+      } else {
+         await ctx.reply(botConfig.texts.backToMenuHeader, {
+           reply_markup: this.makeMainMenuKeyboard()
+         });
+      }
     } else {
       // Меню еще не разблокировано (пользователь не заполнил опрос)
       await this.sendPromoWelcome(ctx);

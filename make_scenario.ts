@@ -192,8 +192,7 @@ const config: ScenarioConfig = {
       nextBlockId: "b4_btn_1"
     },
     "b4_btn_1": { id: "b4_btn_1", type: "button", text: "1 - Маркер Тревоги", rightBlockId: "b4_marker_msg", nextBlockId: "b4_btn_2" },
-    "b4_btn_2": { id: "b4_btn_2", type: "button", text: "2 - Фразы Поддержка", rightBlockId: "b4_phrases_msg", nextBlockId: "b4_wait" },
-    "b4_wait": { id: "b4_wait", type: "wait_button" },
+    "b4_btn_2": { id: "b4_btn_2", type: "button", text: "2 - Фразы Поддержка", rightBlockId: "b4_phrases_msg" },
     
     // 4.1
     "b4_marker_msg": {
@@ -227,8 +226,7 @@ const config: ScenarioConfig = {
       nextBlockId: "b5_btn_1"
     },
     "b5_btn_1": { id: "b5_btn_1", type: "button", text: "7 дней к себе", rightBlockId: "b5_7_msg", nextBlockId: "b5_btn_2" },
-    "b5_btn_2": { id: "b5_btn_2", type: "button", text: "14 дней к себе", rightBlockId: "b5_14_msg", nextBlockId: "b5_wait" },
-    "b5_wait": { id: "b5_wait", type: "wait_button" },
+    "b5_btn_2": { id: "b5_btn_2", type: "button", text: "14 дней к себе", rightBlockId: "b5_14_msg" },
 
     // 5.1
     "b5_7_msg": {
