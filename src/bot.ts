@@ -786,12 +786,13 @@ export class TelegramBotService {
 
     if (session.menuUnlocked) {
       if (config.menuReturnSettings) {
-        const text = config.menuReturnSettings.text || botConfig.texts.backToMenuHeader;
+        const text = config.menuReturnSettings.text || "Сделай свой выбор ⬇️";
         const btnBlockIds = config.menuReturnSettings.buttonBlockIds || [];
         
         const keyboard = new InlineKeyboard();
         btnBlockIds.forEach((id) => {
-          const rawId = id.replace(/^id:\s*/i, "").trim();
+          // Чистим ID от префиксов и пробелов
+          const rawId = id.trim().replace(/^id:\s*/i, "").trim();
           const block = config.blocks[rawId];
           if (block && (block.type === "button" || block.type === "link")) {
             if (block.url) {

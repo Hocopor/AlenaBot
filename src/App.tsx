@@ -1767,14 +1767,12 @@ export default function App() {
                                             <input 
                                               type="text"
                                               value={scenario.menuReturnSettings.text}
-                                              onChange={(e) => updateScenarioState({
-                                                ...scenario,
-                                                menuReturnSettings: {
-                                                  ...scenario.menuReturnSettings!,
-                                                  text: e.target.value
-                                                }
-                                              })}
-                                              className="w-full text-xs px-2 py-1.5 border border-emerald-200 rounded bg-white text-slate-700 font-medium"
+                                              onChange={(e) => {
+                                                const newSettings = { ...scenario.menuReturnSettings!, text: e.target.value };
+                                                setScenario({ ...scenario, menuReturnSettings: newSettings });
+                                                setHasUnsavedChanges(true);
+                                              }}
+                                              className="w-full text-[10px] px-2 py-1.5 border border-emerald-200 rounded bg-white text-slate-700 font-medium"
                                             />
                                           </div>
                                           <div>
@@ -1788,13 +1786,11 @@ export default function App() {
                                                     onChange={(e) => {
                                                       const newIds = [...scenario.menuReturnSettings!.buttonBlockIds];
                                                       newIds[idx] = e.target.value;
-                                                      updateScenarioState({
-                                                        ...scenario,
-                                                        menuReturnSettings: {
-                                                          ...scenario.menuReturnSettings!,
-                                                          buttonBlockIds: newIds
-                                                        }
+                                                      setScenario({ 
+                                                        ...scenario, 
+                                                        menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
                                                       });
+                                                      setHasUnsavedChanges(true);
                                                     }}
                                                     placeholder="wb_q3_b1"
                                                     className="flex-1 text-[10px] px-2 py-1 border border-emerald-200 rounded bg-white font-mono"
@@ -1802,13 +1798,11 @@ export default function App() {
                                                   <button 
                                                     onClick={() => {
                                                       const newIds = scenario.menuReturnSettings!.buttonBlockIds.filter((_, i) => i !== idx);
-                                                      updateScenarioState({
-                                                        ...scenario,
-                                                        menuReturnSettings: {
-                                                          ...scenario.menuReturnSettings!,
-                                                          buttonBlockIds: newIds
-                                                        }
+                                                      setScenario({ 
+                                                        ...scenario, 
+                                                        menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
                                                       });
+                                                      setHasUnsavedChanges(true);
                                                     }}
                                                     className="p-1 text-rose-500 hover:bg-rose-50 rounded"
                                                   >
@@ -1818,13 +1812,14 @@ export default function App() {
                                               ))}
                                               <button 
                                                 onClick={() => {
-                                                  updateScenarioState({
-                                                    ...scenario,
-                                                    menuReturnSettings: {
-                                                      ...scenario.menuReturnSettings!,
-                                                      buttonBlockIds: [...scenario.menuReturnSettings!.buttonBlockIds, ""]
+                                                  setScenario({ 
+                                                    ...scenario, 
+                                                    menuReturnSettings: { 
+                                                      ...scenario.menuReturnSettings!, 
+                                                      buttonBlockIds: [...scenario.menuReturnSettings!.buttonBlockIds, ""] 
                                                     }
                                                   });
+                                                  setHasUnsavedChanges(true);
                                                 }}
                                                 className="w-full py-1 border border-dashed border-emerald-300 rounded text-[10px] font-bold text-emerald-600 hover:bg-emerald-100 flex items-center justify-center space-x-1"
                                               >
@@ -1909,38 +1904,18 @@ export default function App() {
                                       )}
 
                                       {/* 5. Настройка связей (Select-дропдауны прямого маппинга) */}
-                                      <div className="space-y-2.5 pt-3 border-t border-slate-100">
-                                        <h5 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Переопределение связей:</h5>
-                                        
-                                        <div>
-                                          <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Связь ВНИЗ (next):</label>
-                                          <select
-                                            value={activeBlock.nextBlockId || ""}
-                                            onChange={(e) => handleUpdateBlockField(activeBlock.id, { nextBlockId: e.target.value || null })}
-                                            className="w-full text-[11px] px-2 py-1 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none"
-                                          >
-                                            <option value="">Нет (Прервать цепочку)</option>
-                                            {Object.keys(scenario.blocks).map((blkId) => {
-                                              if (blkId === activeBlock.id) return null;
-                                              const b = scenario.blocks[blkId];
-                                              return (
-                                                <option key={blkId} value={blkId}>
-                                                  {blkId} ({b?.type}: {b?.text?.substring(0, 16)}...)
-                                                </option>
-                                              );
-                                            })}
-                                          </select>
-                                        </div>
-
-                                        {activeBlock.type === "button" && (
+                                      {activeBlock.type !== 'menu_return' && activeBlock.type !== 'menu' && activeBlock.type !== 'back' && (
+                                        <div className="space-y-2.5 pt-3 border-t border-slate-100">
+                                          <h5 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Переопределение связей:</h5>
+                                          
                                           <div>
-                                            <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Связь ВПРАВО (right):</label>
+                                            <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Связь ВНИЗ (next):</label>
                                             <select
-                                              value={activeBlock.rightBlockId || ""}
-                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { rightBlockId: e.target.value || null })}
+                                              value={activeBlock.nextBlockId || ""}
+                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { nextBlockId: e.target.value || null })}
                                               className="w-full text-[11px] px-2 py-1 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none"
                                             >
-                                              <option value="">Нет (Без правой ветки)</option>
+                                              <option value="">Нет (Прервать цепочку)</option>
                                               {Object.keys(scenario.blocks).map((blkId) => {
                                                 if (blkId === activeBlock.id) return null;
                                                 const b = scenario.blocks[blkId];
@@ -1952,8 +1927,30 @@ export default function App() {
                                               })}
                                             </select>
                                           </div>
-                                        )}
-                                      </div>
+
+                                          {activeBlock.type === "button" && (
+                                            <div>
+                                              <label className="block text-[8px] font-bold text-slate-400 uppercase tracking-widest mb-1">Связь ВПРАВО (right):</label>
+                                              <select
+                                                value={activeBlock.rightBlockId || ""}
+                                                onChange={(e) => handleUpdateBlockField(activeBlock.id, { rightBlockId: e.target.value || null })}
+                                                className="w-full text-[11px] px-2 py-1 border border-slate-200 rounded-lg bg-slate-50 text-slate-700 focus:outline-none"
+                                              >
+                                                <option value="">Нет (Без правой ветки)</option>
+                                                {Object.keys(scenario.blocks).map((blkId) => {
+                                                  if (blkId === activeBlock.id) return null;
+                                                  const b = scenario.blocks[blkId];
+                                                  return (
+                                                    <option key={blkId} value={blkId}>
+                                                      {blkId} ({b?.type}: {b?.text?.substring(0, 16)}...)
+                                                    </option>
+                                                  );
+                                                })}
+                                              </select>
+                                            </div>
+                                          )}
+                                        </div>
+                                      )}
 
                                     </div>
 
