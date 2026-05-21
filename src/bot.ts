@@ -1,6 +1,7 @@
 import { Bot, InlineKeyboard, Keyboard, Context } from "grammy";
 import { botConfig } from "./botConfig";
 import { sessionManager, UserSession } from "./botSession";
+import { scenarioManager, ScenarioBlock } from "./scenarioManager";
 
 export class TelegramBotService {
   private bot: Bot | null = null;
@@ -15,7 +16,13 @@ export class TelegramBotService {
   private addLog(msg: string) {
     const time = new Date().toISOString().replace("T", " ").substring(0, 19);
     const entry = `[${time}] ${msg}`;
-    console.log(entry);
+    
+    // Пишем в консоль только критические ошибки и предупреждения для минимизации логов
+    const lower = msg.toLowerCase();
+    if (lower.includes("error") || lower.includes("failed") || lower.includes("critical") || lower.includes("crash")) {
+      console.error(entry);
+    }
+    
     this.logMessages.push(entry);
     if (this.logMessages.length > 100) {
       this.logMessages.shift();
@@ -41,9 +48,21 @@ export class TelegramBotService {
    * Инициализация и запуск бота
    */
   public async start(): Promise<{ success: boolean; mode: "webhook" | "polling" | "failed"; error?: string }> {
-    const token = process.env.TELEGRAM_BOT_TOKEN;
+    if (this.bot) {
+      try {
+        await this.bot.stop();
+        this.addLog("Previous bot instance stopped successfully.");
+      } catch (e: any) {
+        this.addLog(`Note: previous bot stop returned: ${e.message || e}`);
+      }
+      this.bot = null;
+      this.isPollingActive = false;
+      this.isWebhookWorking = false;
+    }
+
+    const token = scenarioManager.loadConfig().telegramBotToken || process.env.TELEGRAM_BOT_TOKEN;
     if (!token) {
-      this.addLog("CRITICAL ERROR: TELEGRAM_BOT_TOKEN is missing in environment variables!");
+      this.addLog("CRITICAL ERROR: TELEGRAM_BOT_TOKEN is missing! Provide it in settings or .env");
       return { success: false, mode: "failed", error: "Missing TELEGRAM_BOT_TOKEN" };
     }
 
@@ -81,10 +100,16 @@ export class TelegramBotService {
         this.addLog(`Could not register menu commands: ${cmdErr.message || cmdErr}`);
       }
 
-      const appUrl = process.env.APP_URL;
+      let appUrl = process.env.APP_URL;
       
-      if (appUrl && appUrl.startsWith("https")) {
-        // Пробуем настроить Вебхук
+      if (appUrl) {
+        // Если указан хост без протокола, форсируем https схему
+        if (!appUrl.startsWith("http://") && !appUrl.startsWith("https://")) {
+          appUrl = "https://" + appUrl;
+        } else if (appUrl.startsWith("http://")) {
+          appUrl = appUrl.replace("http://", "https://");
+        }
+        
         const webhookUrl = `${appUrl.replace(/\/$/, "")}/api/telegram-webhook`;
         this.addLog(`Attempting to set webhook to: ${webhookUrl}`);
         
@@ -101,7 +126,7 @@ export class TelegramBotService {
           this.addLog(`Webhook installation failed! Error: ${webhookErr.message || webhookErr}. Falling back to Long Polling...`);
         }
       } else {
-        this.addLog("APP_URL is not set or not HTTPS. Falling back to Long Polling mode...");
+        this.addLog("APP_URL environment variable is not configured. Falling back to Long Polling mode...");
       }
 
       // Если вебхуки не работают или домен не настроен, запускаем Polling
@@ -184,9 +209,12 @@ export class TelegramBotService {
    */
   private makeMainMenuKeyboard(): InlineKeyboard {
     const keyboard = new InlineKeyboard();
-    botConfig.mainMenuButtons.forEach((btn) => {
-      keyboard.text(btn.text, btn.id).row();
-    });
+    const config = scenarioManager.loadConfig();
+    if (config && config.menu) {
+      config.menu.forEach((btn) => {
+        keyboard.text(btn.text, `menu_btn_${btn.id}`).row();
+      });
+    }
     return keyboard;
   }
 
@@ -212,6 +240,121 @@ export class TelegramBotService {
     await ctx.reply(botConfig.texts.welcomePreStart, {
       reply_markup: replyKb
     });
+  }
+
+  /**
+   * Запуск выполнения сценария по блокам
+   */
+  public async executeBlock(ctx: any, blockId: string | null | undefined, userId: number) {
+    if (!blockId) return;
+
+    try {
+      const config = scenarioManager.loadConfig();
+      const block = config.blocks[blockId];
+      if (!block) {
+        console.warn(`[Bot] Requested block not found: ${blockId}`);
+        return;
+      }
+
+      const session = sessionManager.getSession(userId);
+      const sessionStart = session.lastStartTimestamp;
+
+      // Инициализируем и записываем историю переходов (для кнопки Назад)
+      if (!session.historyBlocks) {
+        session.historyBlocks = [];
+      }
+      const history = [...session.historyBlocks];
+      if (block.type !== "pause" && !history.includes(blockId)) {
+        history.push(blockId);
+        sessionManager.updateSession(userId, { historyBlocks: history });
+      }
+
+      this.addLog(`Executing block ID: ${blockId} (${block.type}) for User ID: ${userId}`);
+
+      switch (block.type) {
+        case "text": {
+          await ctx.reply(block.text, { parse_mode: "HTML" });
+          if (block.nextBlockId) {
+            await this.executeBlock(ctx, block.nextBlockId, userId);
+          }
+          break;
+        }
+        case "link": {
+          const label = block.text || "Открыть ссылку";
+          const linkKb = new InlineKeyboard().url(label, block.url || "");
+          await ctx.reply(block.text || "Ссылка на материал:", { reply_markup: linkKb });
+          if (block.nextBlockId) {
+            await this.executeBlock(ctx, block.nextBlockId, userId);
+          }
+          break;
+        }
+        case "menu": {
+          const configLink = config.contactLink || "https://t.me/ibanezebi64";
+          await ctx.reply(botConfig.texts.backToMenuHeader, {
+            reply_markup: this.makeMainMenuKeyboard()
+          });
+          break;
+        }
+        case "back": {
+          const curHistory = session.historyBlocks || [];
+          if (curHistory.length > 1) {
+            const historyCopy = [...curHistory];
+            historyCopy.pop(); // удаляем текущий блок ("Назад")
+            const prevId = historyCopy.pop(); // берем предыдущий шаг
+            sessionManager.updateSession(userId, { historyBlocks: historyCopy });
+            if (prevId) {
+              await this.executeBlock(ctx, prevId, userId);
+            } else {
+              await this.handleReturnToMenu(ctx);
+            }
+          } else {
+            await this.handleReturnToMenu(ctx);
+          }
+          break;
+        }
+        case "pause": {
+          const seconds = block.seconds || 5;
+          setTimeout(async () => {
+            try {
+              const freshSession = sessionManager.getSession(userId);
+              // Если пользователь за это время не перезапустил старт
+              if (freshSession.lastStartTimestamp === sessionStart) {
+                await this.executeBlock(ctx, block.nextBlockId, userId);
+              }
+            } catch (err: any) {
+              scenarioManager.logError(`Ошибка при отработке блока паузы ${blockId}: ${err.message || err}`, err);
+            }
+          }, seconds * 1000);
+          break;
+        }
+        case "wait_button": {
+          // Блок приостанавливает выполнение. Ожидаем нажатия кнопки
+          break;
+        }
+        case "button": {
+          // Находим все кнопки в вертикальной последовательности для группировки в один Inline Keyboard
+          const buttonsGroup: ScenarioBlock[] = [];
+          let current: ScenarioBlock | null = block;
+          while (current && current.type === "button") {
+            buttonsGroup.push(current);
+            current = current.nextBlockId ? config.blocks[current.nextBlockId] : null;
+          }
+
+          const btnKb = new InlineKeyboard();
+          buttonsGroup.forEach((btn) => {
+            const isChecked = session.checkedButtons?.includes(btn.id);
+            const label = btn.rightBlockId ? btn.text : (isChecked ? `✅ ${btn.text}` : btn.text);
+            btnKb.text(label, `blk_btn_${btn.id}`).row();
+          });
+
+          await ctx.reply("Выберите нужный вариант 👇", { reply_markup: btnKb });
+          break;
+        }
+      }
+    } catch (e: any) {
+      scenarioManager.logError(`Ошибка исполнения блока "${blockId}": ${e.message || e}`, e);
+      this.addLog(`Error executing block ${blockId}: ${e.message || e}`);
+    }
   }
 
   /**
@@ -258,11 +401,11 @@ export class TelegramBotService {
         });
       } else {
         // Пользователь находится на этапе приветственного опроса
-        await ctx.reply("Для продолжения заполните, пожалуйста, вопросы первого этапа, нажав на инлайн-кнопочки выше ☺️ Она помогут мне понять твое состояние.");
+        await ctx.reply("Для продолжения введите ответ или воспользуйтесь кнопками ☺️");
       }
     });
 
-    // 4. Обработчик клика по инлайн-кнопкам опроса и сценариев
+    // 4. Обработчик клика по инлайн-кнопкам спроса и сценариев
     bot.on("callback_query:data", async (ctx) => {
       const data = ctx.callbackQuery.data;
       const userId = ctx.from.id;
@@ -278,7 +421,7 @@ export class TelegramBotService {
           return;
         }
 
-        // Запоминаем выбор
+        // Запонимаем выбор
         sessionManager.updateSession(userId, {
           step1Answered: true,
           step1ChoiceId: data
@@ -348,280 +491,84 @@ export class TelegramBotService {
         return;
       }
 
-      // 5. Обработка 6 веток сценариев
-      switch (data) {
-        
-        // ==========================================
-        // ВЕТКА 1. ДНЕВНИК МИКРО-ПОБЕД — Гайд
-        // ==========================================
-        case "menu_diary": {
+      // Нажатие на кнопку из главного меню сценария
+      if (data.startsWith("menu_btn_")) {
+        const btnId = data.substring(9);
+        const config = scenarioManager.loadConfig();
+        const btn = config.menu.find((b) => b.id === btnId);
+        if (btn && btn.startBlockId) {
           await ctx.answerCallbackQuery();
-          const diaryKb = new InlineKeyboard().text("1 - Гайд легализации бездействия🩶", "branch1_guide").row();
-          await ctx.reply(botConfig.texts.branch1Header, {
-            reply_markup: diaryKb
-          });
-          break;
+          await this.executeBlock(ctx, btn.startBlockId, userId);
+        } else {
+          await ctx.answerCallbackQuery({ text: "Для этой кнопки ещё нет сценария! 🛠" });
         }
-        case "branch1_guide": {
-          await ctx.answerCallbackQuery();
-          await ctx.reply(botConfig.texts.branch1Content);
-          
-          // Ссылка на скачивание дневника
-          const downloadKb = new InlineKeyboard().url("📥 Скачать Гайд легализации бездействия", botConfig.materials.diaryPdf).row();
-          await ctx.reply("Держи ссылку на материалы гайда:", {
-            reply_markup: downloadKb
-          });
-
-          // Сохраняем метку времени и планируем через 10 секунд сообщение
-          const sessionStart = session.lastStartTimestamp;
-          setTimeout(async () => {
-            const freshSession = sessionManager.getSession(userId);
-            // Если пользователь не нажал Старт заново
-            if (freshSession.lastStartTimestamp === sessionStart) {
-              const nextKb = new InlineKeyboard()
-                .url("✉️ Написать Алёне", botConfig.contactLink).row()
-                .text("«Вернуться в меню»", "gomenu").row();
-              await bot.api.sendMessage(userId, botConfig.texts.branch1Next, {
-                reply_markup: nextKb
-              });
-            }
-          }, 10000);
-          break;
-        }
-
-        // ==========================================
-        // ВЕТКА 2. АУДИО ВРЕМЯ — музыка
-        // ==========================================
-        case "menu_audio": {
-          await ctx.answerCallbackQuery();
-          await ctx.reply(botConfig.texts.branch2Header, { parse_mode: "HTML" });
-          
-          // Отправляем аудиофайл-заглушку с описанием
-          try {
-            await ctx.replyWithAudio(botConfig.materials.audioMusic, {
-              title: "АУДИО ВРЕМЯ — музыка для тебя",
-              performer: "Алёна — психолог-СоПутница",
-              caption: "🎧 Позаботься о себе прямо сейчас."
-            });
-          } catch (audioErr) {
-            // Если Telegram не может скачать аудио по URL, отправим текстовую ссылку
-            await ctx.reply(`Не удалось отправить музыкальный файл напрямую. Вот ссылка на прослушивание: \n🎵 ${botConfig.materials.audioMusic}`);
-          }
-
-          const sessionStart = session.lastStartTimestamp;
-          setTimeout(async () => {
-            const freshSession = sessionManager.getSession(userId);
-            if (freshSession.lastStartTimestamp === sessionStart) {
-              const nextKb = new InlineKeyboard().text("«Вернуться в меню»", "gomenu").row();
-              await bot.api.sendMessage(userId, botConfig.texts.branch2Next, {
-                reply_markup: nextKb
-              });
-            }
-          }, 10000);
-          break;
-        }
-
-        // ==========================================
-        // ВЕТКА 3. УПРАЖНЕНИЕ — техники
-        // ==========================================
-        case "menu_exercise": {
-          await ctx.answerCallbackQuery();
-          const exerciseKb = new InlineKeyboard().text("«Квадрат Дыхания» аудио", "branch3_square").row();
-          await ctx.reply(botConfig.texts.branch3Header, {
-            reply_markup: exerciseKb,
-            parse_mode: "HTML"
-          });
-          break;
-        }
-        case "branch3_square": {
-          await ctx.answerCallbackQuery();
-          await ctx.reply(botConfig.texts.branch3Content);
-
-          // Отправляем дыхательное упражнение
-          try {
-            await ctx.replyWithAudio(botConfig.materials.breathingAudio, {
-              title: "«Квадрат Дыхания» аудио",
-              performer: "Алёна",
-              caption: "✨ Мягкое расслабление за 2 минуты."
-            });
-          } catch (err) {
-            await ctx.reply(`Ссылка на аудио квадрат дыхания: \n🧘‍♀️ ${botConfig.materials.breathingAudio}`);
-          }
-
-          const sessionStart = session.lastStartTimestamp;
-          setTimeout(async () => {
-            const freshSession = sessionManager.getSession(userId);
-            if (freshSession.lastStartTimestamp === sessionStart) {
-              const nextKb = new InlineKeyboard()
-                .url("✉️ Написать Алёне", botConfig.contactLink).row()
-                .text("«Вернуться в меню»", "gomenu").row();
-              await bot.api.sendMessage(userId, botConfig.texts.branch3Next, {
-                reply_markup: nextKb
-              });
-            }
-          }, 7000); // 7 секунд из ТЗ!
-          break;
-        }
-
-        // ==========================================
-        // ВЕТКА 4. ОПОРА
-        // ==========================================
-        case "menu_opora": {
-          await ctx.answerCallbackQuery();
-          const oporaKb = new InlineKeyboard()
-            .text("1 - Маркер Тревоги", "branch4_anxiety").row()
-            .text("2 - Фразы Поддержка", "branch4_support").row();
-          await ctx.reply(botConfig.texts.branch4Header, {
-            reply_markup: oporaKb,
-            parse_mode: "HTML"
-          });
-          break;
-        }
-        case "branch4_anxiety": {
-          await ctx.answerCallbackQuery();
-          await ctx.reply(botConfig.texts.branch4Sub1Content, { parse_mode: "HTML" });
-
-          // Отправляем ссылку/файл Маркер Тревоги
-          const downloadKb = new InlineKeyboard().url("📥 Скачать Маркер Тревоги", botConfig.materials.anxietyMarkerPdf).row();
-          await ctx.reply("Файл Маркера тревоги подготовлен к скачиванию:", {
-            reply_markup: downloadKb
-          });
-
-          const sessionStart = session.lastStartTimestamp;
-          setTimeout(async () => {
-            const freshSession = sessionManager.getSession(userId);
-            if (freshSession.lastStartTimestamp === sessionStart) {
-              const nextKb = new InlineKeyboard().text("«Вернуться в меню»", "gomenu").row();
-              await bot.api.sendMessage(userId, botConfig.texts.branch4Sub1Next, {
-                reply_markup: nextKb
-              });
-            }
-          }, 10000);
-          break;
-        }
-        case "branch4_support": {
-          await ctx.answerCallbackQuery();
-          await ctx.reply(botConfig.texts.branch4Sub2Content, { parse_mode: "HTML" });
-
-          // Отправляем ссылку/файл Фразы Поддержки
-          const downloadKb = new InlineKeyboard().url("📥 Скачать Фразы Поддержки", botConfig.materials.supportPhrasesPdf).row();
-          await ctx.reply("Файл 12 фраз поддержки готов к загрузке:", {
-            reply_markup: downloadKb
-          });
-
-          const sessionStart = session.lastStartTimestamp;
-          setTimeout(async () => {
-            const freshSession = sessionManager.getSession(userId);
-            if (freshSession.lastStartTimestamp === sessionStart) {
-              const nextKb = new InlineKeyboard().text("«Вернуться в меню»", "gomenu").row();
-              await bot.api.sendMessage(userId, botConfig.texts.branch4Sub2Next, {
-                reply_markup: nextKb
-              });
-            }
-          }, 10000);
-          break;
-        }
-
-        // ==========================================
-        // ВЕТКА 5. ХОЧУ — Челленджи
-        // ==========================================
-        case "menu_want": {
-          await ctx.answerCallbackQuery();
-          const challengeKb = new InlineKeyboard()
-            .text("7 дней к себе", "branch5_7days").row()
-            .text("14 дней к себе", "branch5_14days").row();
-          await ctx.reply(botConfig.texts.branch5Header, {
-            reply_markup: challengeKb,
-            parse_mode: "HTML"
-          });
-          break;
-        }
-        case "branch5_7days": {
-          await ctx.answerCallbackQuery();
-          await ctx.reply(botConfig.texts.branch5Sub1Content, { parse_mode: "HTML" });
-
-          const sessionStart = session.lastStartTimestamp;
-          // Через 5 секунд отправляется ссылка доступа
-          setTimeout(async () => {
-            const freshSession = sessionManager.getSession(userId);
-            if (freshSession.lastStartTimestamp === sessionStart) {
-              const linkKb = new InlineKeyboard().url("🚪 Начать челлендж (7 дней)", botConfig.materials.challenge7DaysUrl).row();
-              await bot.api.sendMessage(userId, "Ваша персональная ссылка на доступ к челленджу открыта:", {
-                reply_markup: linkKb
-              });
-            }
-          }, 5000);
-
-          // Через 10 секунд посылаем напутствие и кнопку возврата в меню
-          setTimeout(async () => {
-            const freshSession = sessionManager.getSession(userId);
-            if (freshSession.lastStartTimestamp === sessionStart) {
-              const nextKb = new InlineKeyboard().text("«Вернуться в меню»", "gomenu").row();
-              await bot.api.sendMessage(userId, botConfig.texts.branch5Next, {
-                reply_markup: nextKb
-              });
-            }
-          }, 10000);
-          break;
-        }
-        case "branch5_14days": {
-          await ctx.answerCallbackQuery();
-          await ctx.reply(botConfig.texts.branch5Sub2Content, { parse_mode: "HTML" });
-
-          const sessionStart = session.lastStartTimestamp;
-          // Через 5 секунд отправляется ссылка доступа
-          setTimeout(async () => {
-            const freshSession = sessionManager.getSession(userId);
-            if (freshSession.lastStartTimestamp === sessionStart) {
-              const linkKb = new InlineKeyboard().url("🚪 Начать челлендж (14 дней)", botConfig.materials.challenge14DaysUrl).row();
-              await bot.api.sendMessage(userId, "Ваша персональная ссылка на доступ к челленджу открыта:", {
-                reply_markup: linkKb
-              });
-            }
-          }, 5000);
-
-          // Через 10 секунд посылаем напутствие и кнопку возврата в меню
-          setTimeout(async () => {
-            const freshSession = sessionManager.getSession(userId);
-            if (freshSession.lastStartTimestamp === sessionStart) {
-              const nextKb = new InlineKeyboard().text("«Вернуться в меню»", "gomenu").row();
-              await bot.api.sendMessage(userId, botConfig.texts.branch5Next, {
-                reply_markup: nextKb
-              });
-            }
-          }, 10000);
-          break;
-        }
-
-        // ==========================================
-        // ВЕТКА 6. 🩶 ГРУППА «ПЕРЕРОЖДЕНИЕ»
-        // ==========================================
-        case "menu_rebirth": {
-          await ctx.answerCallbackQuery();
-          const writeKb = new InlineKeyboard().url("✉️ Написать лично Алёне", botConfig.contactLink).row();
-          await ctx.reply(botConfig.texts.branch6Content, {
-            reply_markup: writeKb
-          });
-
-          const sessionStart = session.lastStartTimestamp;
-          setTimeout(async () => {
-            const freshSession = sessionManager.getSession(userId);
-            if (freshSession.lastStartTimestamp === sessionStart) {
-              const nextKb = new InlineKeyboard()
-                .url("✉️ Написать", botConfig.contactLink).row()
-                .text("«Вернуться в меню»", "gomenu").row();
-              await bot.api.sendMessage(userId, botConfig.texts.branch6Next, {
-                reply_markup: nextKb
-              });
-            }
-          }, 10000);
-          break;
-        }
-
-        default: {
-          await ctx.answerCallbackQuery({ text: "Функция в разработке... 🛠" });
-        }
+        return;
       }
+
+      // Нажатие на кнопку внутри блочной структуры конструктора
+      if (data.startsWith("blk_btn_")) {
+        const btnId = data.substring(8);
+        const config = scenarioManager.loadConfig();
+        const btn = config.blocks[btnId];
+
+        if (btn) {
+          await ctx.answerCallbackQuery();
+          if (btn.rightBlockId) {
+            // Кнопка имеет связь вправо — переходим дальше по этой ветви!
+            await this.executeBlock(ctx, btn.rightBlockId, userId);
+          } else {
+            // Кнопка без правого продолжения — работает как простой чекбокс-галочка
+            if (!session.checkedButtons) {
+              session.checkedButtons = [];
+            }
+            const checked = [...session.checkedButtons];
+            const idx = checked.indexOf(btnId);
+            if (idx >= 0) {
+              checked.splice(idx, 1);
+            } else {
+              checked.push(btnId);
+            }
+            sessionManager.updateSession(userId, { checkedButtons: checked });
+
+            // Перерисовываем клавиатуру для всей вертикальной группы
+            try {
+              let startBtn = btn;
+              const allBlocks = Object.values(config.blocks);
+              let foundParent = true;
+              while (foundParent) {
+                const parent = allBlocks.find((b) => b.nextBlockId === startBtn.id && b.type === "button");
+                if (parent) {
+                  startBtn = parent;
+                } else {
+                  foundParent = false;
+                }
+              }
+
+              const buttonsGroup: ScenarioBlock[] = [];
+              let current: ScenarioBlock | null = startBtn;
+              while (current && current.type === "button") {
+                buttonsGroup.push(current);
+                current = current.nextBlockId ? config.blocks[current.nextBlockId] : null;
+              }
+
+              const btnKb = new InlineKeyboard();
+              buttonsGroup.forEach((b) => {
+                const isCh = checked.includes(b.id);
+                const label = b.rightBlockId ? b.text : (isCh ? `✅ ${b.text}` : b.text);
+                btnKb.text(label, `blk_btn_${b.id}`).row();
+              });
+
+              await ctx.editMessageReplyMarkup({ reply_markup: btnKb });
+            } catch (markupErr) {
+              console.error("[Bot] Failed to update dynamic button checklist:", markupErr);
+            }
+          }
+        }
+        return;
+      }
+
+      // Если встретили неизвестный callback_query
+      await ctx.answerCallbackQuery({ text: "Функция в разработке... 🛠" });
     });
   }
 
@@ -645,7 +592,9 @@ export class TelegramBotService {
       firstName,
       lastName,
       startedAt: new Date().toISOString(),
-      lastStartTimestamp: timestampNow
+      lastStartTimestamp: timestampNow,
+      checkedButtons: [],
+      historyBlocks: []
     });
 
     // 2) Отправляем первое приветственное сообщение
@@ -680,7 +629,7 @@ export class TelegramBotService {
     if (!userId) return;
 
     const session = sessionManager.getSession(userId);
-    
+
     if (session.menuUnlocked) {
       await ctx.reply(botConfig.texts.backToMenuHeader, {
         reply_markup: this.makeMainMenuKeyboard()
