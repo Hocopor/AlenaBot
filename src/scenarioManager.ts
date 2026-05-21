@@ -13,6 +13,8 @@ export interface ScenarioBlock {
   nextBlockId?: string | null;  // Ссылка на следующий блок вниз
   rightBlockId?: string | null; // Ссылка на блок справа (для типа button)
   menuMessageText?: string;
+  menuGateMessageText?: string;
+  menuGateButtonText?: string;
   menuAttachedBlocks?: string[];
 }
 

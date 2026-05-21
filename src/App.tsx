@@ -71,6 +71,8 @@ interface ScenarioBlock {
   nextBlockId?: string | null;
   rightBlockId?: string | null;
   menuMessageText?: string;
+  menuGateMessageText?: string;
+  menuGateButtonText?: string;
   menuAttachedBlocks?: string[];
 }
 
@@ -701,6 +703,8 @@ export default function App() {
       text: type === "pause" ? "" : (type === "file" ? "Прикрепленный файл" : type === "audio" ? "Аудиозапись" : (type === "menu" ? (globalMenu?.text || "Вернуться в меню") : "Новая карточка. Отредактируйте текст...")),
       seconds: type === "pause" ? 5 : undefined,
       url: type === "link" ? "https://" : (type === "file" || type === "audio") ? "" : undefined,
+      menuGateMessageText: type === "menu" ? (globalMenu?.menuGateMessageText || "Для перехода к выбору разделов нажмите на кнопку ниже ⬇️") : undefined,
+      menuGateButtonText: type === "menu" ? (globalMenu?.menuGateButtonText || "Вернуться в меню") : undefined,
       menuMessageText: type === "menu" ? (globalMenu?.menuMessageText || "Сделай свой выбор ⬇️") : undefined,
       menuAttachedBlocks: type === "menu" ? (globalMenu?.menuAttachedBlocks ? [...globalMenu.menuAttachedBlocks] : []) : undefined
     };
@@ -899,11 +903,15 @@ export default function App() {
         const globalMenu = (Object.values(updatedBlocks) as ScenarioBlock[]).find(b => b.type === 'menu' && b.id !== blockId);
         if (globalMenu) {
           fields.text = globalMenu.text;
+          fields.menuGateMessageText = globalMenu.menuGateMessageText;
+          fields.menuGateButtonText = globalMenu.menuGateButtonText;
           fields.menuMessageText = globalMenu.menuMessageText;
           fields.menuAttachedBlocks = globalMenu.menuAttachedBlocks ? [...globalMenu.menuAttachedBlocks] : [];
         } else {
           // Дефолтные если это первый такой блок
           if (!fields.text) fields.text = "Вернуться в меню";
+          if (!fields.menuGateMessageText) fields.menuGateMessageText = "Для перехода к выбору разделов нажмите на кнопку ниже ⬇️";
+          if (!fields.menuGateButtonText) fields.menuGateButtonText = "Вернуться в меню";
           if (!fields.menuMessageText) fields.menuMessageText = "Сделай свой выбор ⬇️";
           if (!fields.menuAttachedBlocks) fields.menuAttachedBlocks = [];
         }
@@ -915,6 +923,8 @@ export default function App() {
       // Рассылаем настройки по всем остальным блокам типа "menu"
       const syncFields = {
         text: newBlock.text,
+        menuGateMessageText: newBlock.menuGateMessageText,
+        menuGateButtonText: newBlock.menuGateButtonText,
         menuMessageText: newBlock.menuMessageText,
         menuAttachedBlocks: newBlock.menuAttachedBlocks ? [...newBlock.menuAttachedBlocks] : []
       };
@@ -1826,7 +1836,7 @@ export default function App() {
                                       </div>
 
                                       {/* 2. Текст сообщения / кнопка */}
-                                      {(activeBlock.type === "text" || activeBlock.type === "button" || activeBlock.type === "link" || activeBlock.type === "back" || activeBlock.type === "menu") && (
+                                      {(activeBlock.type === "text" || activeBlock.type === "button" || activeBlock.type === "link" || activeBlock.type === "back") && (
                                         <div>
                                           <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
                                             {activeBlock.type === "button" ? "Текст кнопки выбора" : (activeBlock.type === "menu" ? "Текст самой кнопки" : "Отправляемый текст сообщения")}
@@ -1853,17 +1863,43 @@ export default function App() {
 
                                       {/* Внутренняя логика кнопки "В меню" */}
                                       {activeBlock.type === "menu" && (
-                                        <div className="space-y-3 bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 mt-2">
+                                        <div className="space-y-4 bg-emerald-50/50 p-4 rounded-xl border border-emerald-100 mt-2">
                                           <div>
                                             <label className="block text-[9px] font-black text-emerald-800 uppercase tracking-widest mb-1">
-                                              Сообщение при клике:
+                                              1. Текст сообщения (с кнопкой перехода):
+                                            </label>
+                                            <textarea
+                                              value={activeBlock.menuGateMessageText || ""}
+                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { menuGateMessageText: e.target.value })}
+                                              rows={3}
+                                              placeholder="Текст сообщения, который придет первым..."
+                                              className="w-full text-xs px-2.5 py-1.5 border border-emerald-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 leading-normal font-sans text-slate-700 bg-white"
+                                            />
+                                          </div>
+                                          
+                                          <div>
+                                            <label className="block text-[9px] font-black text-emerald-800 uppercase tracking-widest mb-1">
+                                              2. Текст самой кнопки:
+                                            </label>
+                                            <input
+                                              type="text"
+                                              value={activeBlock.menuGateButtonText || ""}
+                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { menuGateButtonText: e.target.value, text: e.target.value })}
+                                              placeholder="Название кнопки перехода..."
+                                              className="w-full text-xs px-2.5 py-1.5 border border-emerald-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 leading-normal font-sans text-slate-700 bg-white font-bold"
+                                            />
+                                          </div>
+
+                                          <div>
+                                            <label className="block text-[9px] font-black text-emerald-800 uppercase tracking-widest mb-1">
+                                              3. Текст сообщения меню (с выбором):
                                             </label>
                                             <textarea
                                               value={activeBlock.menuMessageText || ""}
                                               onChange={(e) => handleUpdateBlockField(activeBlock.id, { menuMessageText: e.target.value })}
                                               rows={3}
-                                              placeholder="Введите текст, который бот пришлет при клике на эту кнопку..."
-                                              className="w-full text-xs px-2 py-1 border border-slate-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-750"
+                                              placeholder="Текст сообщения с кнопками подразделов..."
+                                              className="w-full text-xs px-2.5 py-1.5 border border-emerald-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 leading-normal font-sans text-slate-700 bg-white"
                                             />
                                           </div>
 

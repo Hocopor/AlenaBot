@@ -364,27 +364,11 @@ export class TelegramBotService {
         }
         case "menu": {
           sessionManager.updateSession(userId, { menuUnlocked: true });
-          const messageText = block.text || "Сделай свой выбор ⬇️";
-          const attachedIds = block.menuAttachedBlocks || [];
-
-          let replyMarkup;
-          if (attachedIds.length > 0) {
-            const btnKb = new InlineKeyboard();
-            attachedIds.forEach((id) => {
-              const b = config.blocks[id];
-              if (b) {
-                const isChecked = session.checkedButtons?.includes(b.id);
-                const label = b.url ? b.text : (b.rightBlockId ? b.text : (isChecked ? `✅ ${b.text}` : b.text));
-                if (b.url) btnKb.url(label || "Link", b.url).row();
-                else btnKb.text(label || "Button", `blk_btn_${b.id}`).row();
-              }
-            });
-            replyMarkup = btnKb;
-          } else {
-            replyMarkup = this.makeMainMenuKeyboard();
-          }
-
-          await ctx.reply(messageText, { parse_mode: "HTML", reply_markup: replyMarkup });
+          const gateMessage = block.menuGateMessageText || "Для перехода к выбору разделов нажмите на кнопку ниже ⬇️";
+          const gateButtonLabel = block.menuGateButtonText || block.text || "Открыть меню";
+          
+          const keyboard = new InlineKeyboard().text(gateButtonLabel, `menu_gate_${block.id}`);
+          await ctx.reply(gateMessage, { parse_mode: "HTML", reply_markup: keyboard });
           break;
         }
         case "back": {
@@ -459,6 +443,32 @@ export class TelegramBotService {
       const userId = ctx.from.id;
       const session = sessionManager.getSession(userId);
       const config = scenarioManager.loadConfig();
+
+      if (data.startsWith("menu_gate_")) {
+        const blockId = data.substring(10);
+        const block = config.blocks[blockId];
+        if (!block || block.type !== 'menu') return await ctx.answerCallbackQuery();
+
+        const menuText = block.menuMessageText || "Сделай свой выбор ⬇️";
+        const attachedIds = block.menuAttachedBlocks || [];
+        const keyboard = new InlineKeyboard();
+
+        if (attachedIds.length > 0) {
+          attachedIds.forEach((id) => {
+            const b = config.blocks[id];
+            if (b) {
+              const isChecked = session.checkedButtons?.includes(b.id);
+              const label = b.url ? b.text : (b.rightBlockId ? b.text : (isChecked ? `✅ ${b.text}` : b.text));
+              if (b.url) keyboard.url(label || "Link", b.url).row();
+              else keyboard.text(label || "Button", `blk_btn_${b.id}`).row();
+            }
+          });
+        }
+        
+        await ctx.answerCallbackQuery();
+        await ctx.reply(menuText, { parse_mode: "HTML", reply_markup: keyboard });
+        return;
+      }
 
       if (data.startsWith("blk_btn_")) {
         const btnId = data.substring(8);
