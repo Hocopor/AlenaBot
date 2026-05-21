@@ -19,7 +19,7 @@ const config: ScenarioConfig = {
   startBlockId: "welcome_1",
   menu: [
     { id: "menu_start", text: "Старт", startBlockId: "welcome_1" },
-    { id: "menu_return", text: "Вернуться в меню", startBlockId: "menu_return_msg" }
+    { id: "menu_return", text: "Вернуться в меню" }
   ],
   blocks: {
     "welcome_1": {
@@ -271,16 +271,7 @@ const config: ScenarioConfig = {
       nextBlockId: "b6_link2"
     },
     "b6_link2": { id: "b6_link2", type: "link", text: "Написать", url: "https://t.me/placeholder", nextBlockId: "b6_menu" },
-    "b6_menu": createMenuBlock("b6_menu"),
-
-    // RETURN MENU LOGIC (in case menu button triggers return directly from bottom reply kb)
-    "menu_return_msg": {
-      id: "menu_return_msg",
-      type: "menu",
-      text: "Вернуться в меню",
-      menuMessageText: "Сделай свой выбор ⬇️",
-      menuAttachedBlocks: navButtons
-    }
+    "b6_menu": createMenuBlock("b6_menu")
   }
 };
 

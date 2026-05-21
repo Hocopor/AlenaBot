@@ -839,9 +839,15 @@ export class TelegramBotService {
       if (returnMenuItem && returnMenuItem.startBlockId) {
          await this.executeBlock(ctx, returnMenuItem.startBlockId, userId);
       } else {
-         await ctx.reply(botConfig.texts.backToMenuHeader, {
-           reply_markup: this.makeMainMenuKeyboard()
-         });
+         // Fallback: execute any existing menu block, e.g. b1_menu
+         const menuBlockId = Object.keys(config.blocks).find(k => config.blocks[k].type === "menu");
+         if (menuBlockId) {
+            await this.executeBlock(ctx, menuBlockId, userId);
+         } else {
+            await ctx.reply(botConfig.texts.backToMenuHeader, {
+              reply_markup: this.makeMainMenuKeyboard()
+            });
+         }
       }
     } else {
       // Меню еще не разблокировано (пользователь не заполнил опрос)
