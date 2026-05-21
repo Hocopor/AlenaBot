@@ -559,6 +559,72 @@ export default function App() {
     }
   };
 
+  // Скачивание боевой конфигурации в JSON
+  const handleExportScenario = async () => {
+    if (!authToken) return;
+    try {
+      const res = await fetch("/api/scenario", {
+        headers: { "Authorization": `Bearer ${authToken}` }
+      });
+      if (res.ok) {
+        const config = await res.json();
+        const blob = new Blob([JSON.stringify(config, null, 2)], { type: "application/json" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        const dateStr = new Date().toISOString().slice(0, 10);
+        a.href = url;
+        a.download = `alena_bot_scenario_${dateStr}.json`;
+        a.click();
+        URL.revokeObjectURL(url);
+        showToast("Боевая конфигурация скачана 📥");
+      }
+    } catch (e) {
+      alert("Ошибка при скачивании конфигурации");
+    }
+  };
+
+  // Импорт конфигурации из JSON файла
+  const handleImportScenario = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !authToken) return;
+
+    if (!window.confirm("⚠️ ВНИМАНИЕ: Это действие ПОЛНОСТЬЮ ЗАМЕНИТ текущий боевой сценарий данными из файла и ПЕРЕЗАПУСТИТ бота. Продолжить?")) {
+      e.target.value = "";
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const content = event.target?.result as string;
+        const config = JSON.parse(content);
+        
+        const res = await fetch("/api/scenario/import", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Authorization": `Bearer ${authToken}`
+          },
+          body: JSON.stringify(config)
+        });
+        
+        const data = await res.json();
+        if (res.ok && data.success) {
+          showToast("Конфигурация успешно импортирована и применена! 🚀");
+          fetchScenario();
+          fetchData();
+        } else {
+          alert(data.error || "Ошибка при импорте конфигурации");
+        }
+      } catch (err) {
+        alert("Ошибка при чтении файла: неверный формат JSON или файл поврежден.");
+      } finally {
+        e.target.value = "";
+      }
+    };
+    reader.readAsText(file);
+  };
+
   // Смена глобальных настроек (токен, пароли, ссылки)
   const handleSaveSettings = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1167,6 +1233,33 @@ export default function App() {
                       <Trash2 className="h-3.5 w-3.5 mr-1" />
                       Сбросить изменения
                     </button>
+
+                    <div className="w-[1px] h-7 bg-slate-200 mx-1 self-center" />
+
+                    <button
+                      onClick={handleExportScenario}
+                      className="inline-flex items-center px-3 py-1.5 border border-slate-200 text-xs font-bold rounded-lg bg-white hover:bg-blue-50 text-blue-600 cursor-pointer transition-all"
+                    >
+                      <ArrowDown className="h-3.5 w-3.5 mr-1" />
+                      Скачать JSON
+                    </button>
+
+                    <label
+                      htmlFor="import-scenario-input"
+                      className="inline-flex items-center px-3 py-1.5 border border-slate-200 text-xs font-bold rounded-lg bg-white hover:bg-indigo-50 text-indigo-600 cursor-pointer transition-all"
+                    >
+                      <ArrowUp className="h-3.5 w-3.5 mr-1" />
+                      Загрузить JSON
+                    </label>
+                    <input 
+                      type="file" 
+                      id="import-scenario-input" 
+                      className="hidden" 
+                      accept=".json" 
+                      onChange={handleImportScenario}
+                    />
+
+                    <div className="w-[1px] h-7 bg-slate-200 mx-1 self-center" />
 
                     <button
                       onClick={handleValidateDraft}

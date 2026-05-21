@@ -309,6 +309,44 @@ async function startServer() {
     }
   });
 
+  // API: Импорт сценария из файла (Загрузить и сразу сделать боевым)
+  app.post("/api/scenario/import", checkAuth, async (req, res) => {
+    try {
+      const newConfig = req.body;
+      if (!newConfig || !newConfig.blocks || !newConfig.menu) {
+        return res.status(400).json({ error: "Некорректный формат файла сценария." });
+      }
+
+      // Валидируем
+      const validation = scenarioManager.validateConfig(newConfig);
+      if (!validation.isValid) {
+        return res.status(400).json({ error: "Файл содержит логические ошибки и не может быть применен.", errors: validation.errors });
+      }
+
+      // Сохраняем как рабочий конфиг
+      scenarioManager.saveConfig(newConfig);
+
+      // Синхронизируем с конфигурацией для совместимости
+      if (newConfig.telegramBotToken) {
+        process.env.TELEGRAM_BOT_TOKEN = newConfig.telegramBotToken;
+      }
+      if (newConfig.contactLink) {
+        botConfig.contactLink = newConfig.contactLink;
+      }
+
+      // Перезапускаем бота
+      console.log("[Import] Activating imported scenario config and reloading telegramBotService...");
+      const restartResult = await telegramBotService.start();
+
+      // Удаляем черновик, чтобы он не конфликтовал с новыми данными
+      scenarioManager.deleteDraft();
+
+      res.json({ success: true, botRestart: restartResult });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || "Failed to import scenario config" });
+    }
+  });
+
   // API: Валидация сценария перед отправкой
   app.post("/api/scenario/validate", checkAuth, (req, res) => {
     try {
