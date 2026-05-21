@@ -459,47 +459,45 @@ export default function App() {
     const sanitizedBlocks = { ...newConfig.blocks };
     let changed = false;
 
+    // ГАРАНТИРУЕМ, что общие настройки всегда созданы (singleton)
+    const finalMenuSettings = newConfig.menuReturnSettings || {
+      text: "Сделай свой выбор:",
+      buttonBlockIds: []
+    };
+    if (!newConfig.menuReturnSettings) changed = true;
+
     // 1. Находим все блоки, которые должны быть 'menu_return'
     Object.keys(sanitizedBlocks).forEach(id => {
       const b = sanitizedBlocks[id];
-      // Если текст "Вернуться в меню" (любой регистр) - это сущность menu_return
-      if ((b.text?.toLowerCase().includes("вернуться в меню") || b.type === 'menu_return') && b.type !== 'menu_return') {
-        sanitizedBlocks[id] = { ...b, type: 'menu_return' };
+      // Если текст "Вернуться в меню" или уже имеет такой тип - нормализуем
+      if ((b.text?.toLowerCase().includes("вернуться в меню") || b.type === 'menu_return') && (b.type !== 'menu_return' || b.nextBlockId || b.rightBlockId)) {
+        sanitizedBlocks[id] = { ...b, type: 'menu_return', nextBlockId: undefined, rightBlockId: undefined };
         changed = true;
       }
     });
 
-    // 2. Убиваем связи у всех 'menu_return' и чистим ссылки на 'menu_return_msg'
+    // 2. Убираем любые ссылки на удаленный 'menu_return_msg' если они остались
     Object.keys(sanitizedBlocks).forEach(id => {
       const b = sanitizedBlocks[id];
-      if (b.type === 'menu_return') {
-        if (b.nextBlockId || b.rightBlockId) {
-          sanitizedBlocks[id] = { ...b, nextBlockId: undefined, rightBlockId: undefined };
-          changed = true;
-        }
-      } else {
-        // У обычных блоков убираем ссылку на 'menu_return_msg', если она вдруг есть
+      if (b.type !== 'menu_return') {
         if (b.nextBlockId === 'menu_return_msg' || b.rightBlockId === 'menu_return_msg') {
            sanitizedBlocks[id] = { 
              ...b, 
              nextBlockId: b.nextBlockId === 'menu_return_msg' ? undefined : b.nextBlockId,
              rightBlockId: b.rightBlockId === 'menu_return_msg' ? undefined : b.rightBlockId
            };
-           // Конвертируем этот блок в menu_return если он стал тупиковым из-за удаления этой связи? 
-           // Нет, лучше просто убрать связь.
            changed = true;
         }
       }
     });
 
-    // 3. Удаляем технический блок 'menu_return_msg' с доски совершенно
     if (sanitizedBlocks['menu_return_msg']) {
       delete sanitizedBlocks['menu_return_msg'];
       changed = true;
     }
 
-    const finalConfig = changed ? { ...newConfig, blocks: sanitizedBlocks } : newConfig;
-
+    const finalConfig = { ...newConfig, blocks: sanitizedBlocks, menuReturnSettings: finalMenuSettings };
+    
     // Отрезаем всё что шло после текущего индекса в истории (для хопа по Undo/Redo)
     const newHistory = history.slice(0, historyIndex + 1);
     newHistory.push(finalConfig);
@@ -1770,6 +1768,7 @@ export default function App() {
                               {/* БОКОВАЯ FIGMA-ПАНЕЛЬ НАСТРОЕК ВЫДЕЛЕННОГО БЛОКА */}
                               {selectedBlockId && scenario.blocks[selectedBlockId] ? (() => {
                                 const activeBlock = scenario.blocks[selectedBlockId];
+                                const isMenuReturn = activeBlock.type === 'menu_return' || activeBlock.type === 'menu';
                                 return (
                                   <motion.div 
                                     initial={{ opacity: 0, x: 25 }}
@@ -1845,94 +1844,95 @@ export default function App() {
                                         </div>
                                       )}
 
-                                      {/* 2.6 Глобальные настройки кнопки Вернуться в меню (singleton) */}
-                                      {(activeBlock.type === "menu_return" || activeBlock.type === "menu") && scenario.menuReturnSettings && (
-                                        <div className="space-y-3 bg-emerald-50/50 p-3 rounded-xl border border-emerald-100">
-                                          <div className="flex items-center justify-between">
-                                            <h5 className="text-[10px] font-black text-emerald-800 uppercase tracking-widest leading-none">Общие настройки возврата:</h5>
-                                            <Wrench className="w-3 h-3 text-emerald-400" />
-                                          </div>
-                                          <div>
-                                            <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1">Сообщение пользователю при возврате:</label>
-                                            <textarea 
-                                              value={scenario.menuReturnSettings.text}
-                                              rows={3}
-                                              onChange={(e) => {
-                                                const newSettings = { ...scenario.menuReturnSettings!, text: e.target.value };
-                                                updateScenarioState({ ...scenario, menuReturnSettings: newSettings });
-                                              }}
-                                              placeholder="Сделай выбор..."
-                                              className="w-full text-[10px] px-2 py-1.5 border border-emerald-200 rounded-lg bg-white text-slate-700 font-medium focus:ring-1 focus:ring-emerald-400 focus:outline-none"
-                                            />
-                                          </div>
-                                          <div className="pt-2 border-t border-emerald-100/50">
-                                            <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1.5">ID блоков для кнопок меню (Reply):</label>
-                                            <div className="space-y-2">
-                                              {scenario.menuReturnSettings.buttonBlockIds.map((idVal, idx) => {
-                                                const isValidId = idVal === "" || scenario.blocks[idVal];
-                                                return (
-                                                  <div key={idx} className="flex items-center space-x-1">
-                                                    <div className="relative flex-1">
-                                                      <select 
-                                                        value={idVal}
-                                                        onChange={(e) => {
-                                                          const newIds = [...scenario.menuReturnSettings!.buttonBlockIds];
-                                                          newIds[idx] = e.target.value;
+                                        {/* 2.6 Глобальные настройки кнопки Вернуться в меню (singleton) */}
+                                        {isMenuReturn && (
+                                          <div className="space-y-3 bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 shadow-sm">
+                                            <div className="flex items-center justify-between">
+                                              <h5 className="text-[10px] font-black text-emerald-800 uppercase tracking-widest leading-none">Глобальные настройки возврата:</h5>
+                                              <Wrench className="w-3 h-3 text-emerald-500" />
+                                            </div>
+                                            <div>
+                                              <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1">Текст сообщения после нажатия:</label>
+                                              <textarea 
+                                                value={scenario.menuReturnSettings?.text || ""}
+                                                rows={3}
+                                                onChange={(e) => {
+                                                  const newSettings = { ...scenario.menuReturnSettings!, text: e.target.value };
+                                                  updateScenarioState({ ...scenario, menuReturnSettings: newSettings });
+                                                }}
+                                                placeholder="Сделай выбор..."
+                                                className="w-full text-[10px] px-2 py-1.5 border border-emerald-200 rounded-lg bg-white text-slate-700 font-medium focus:ring-1 focus:ring-emerald-400 focus:outline-none"
+                                              />
+                                            </div>
+                                            <div className="pt-2 border-t border-emerald-100/50">
+                                              <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1.5 font-black tracking-tighter">ID блоков Reply-кнопок меню:</label>
+                                              <div className="space-y-2">
+                                                {scenario.menuReturnSettings?.buttonBlockIds.map((idVal, idx) => {
+                                                  const isValidId = idVal === "" || scenario.blocks[idVal];
+                                                  return (
+                                                    <div key={idx} className="flex items-center space-x-1">
+                                                      <div className="relative flex-1">
+                                                        <select 
+                                                          value={idVal}
+                                                          onChange={(e) => {
+                                                            const newIds = [...scenario.menuReturnSettings!.buttonBlockIds];
+                                                            newIds[idx] = e.target.value;
+                                                            updateScenarioState({ 
+                                                              ...scenario, 
+                                                              menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
+                                                            });
+                                                          }}
+                                                          className={`w-full text-[10px] px-2 py-1 border rounded bg-white font-mono focus:ring-1 focus:ring-emerald-400 focus:outline-none ${!isValidId ? 'border-rose-300 text-rose-600' : 'border-emerald-200 text-slate-700'}`}
+                                                        >
+                                                          <option value="">-- Выбрать блок по ID --</option>
+                                                          {(Object.values(scenario.blocks) as ScenarioBlock[])
+                                                            .filter(b => b.type !== 'menu_return' && b.type !== 'back')
+                                                            .sort((a, b) => a.id.localeCompare(b.id))
+                                                            .map(b => (
+                                                              <option key={b.id} value={b.id}>
+                                                                {b.id} ({b.type}): {b.text?.substring(0, 20) || "..."}
+                                                              </option>
+                                                            ))
+                                                          }
+                                                        </select>
+                                                      </div>
+                                                      <button 
+                                                        onClick={() => {
+                                                          const newIds = scenario.menuReturnSettings!.buttonBlockIds.filter((_, i) => i !== idx);
                                                           updateScenarioState({ 
                                                             ...scenario, 
                                                             menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
                                                           });
                                                         }}
-                                                        className={`w-full text-[10px] px-2 py-1 border rounded bg-white focus:ring-1 focus:ring-emerald-400 focus:outline-none ${!isValidId ? 'border-rose-300 text-rose-600' : 'border-emerald-200 text-slate-700'}`}
+                                                        className="p-1 text-rose-400 hover:bg-rose-50 hover:text-rose-600 rounded transition-colors"
                                                       >
-                                                        <option value="">-- Выберите блок --</option>
-                                                        {(Object.values(scenario.blocks) as ScenarioBlock[])
-                                                          .filter(b => b.type !== 'menu_return' && b.type !== 'back') // Не даем ссылаться на самих себя
-                                                          .sort((a, b) => (a.text || "").localeCompare(b.text || ""))
-                                                          .map(b => (
-                                                            <option key={b.id} value={b.id}>
-                                                              {b.id} ({b.type}): {b.text?.substring(0, 30) || "Без текста"}...
-                                                            </option>
-                                                          ))
-                                                        }
-                                                      </select>
-                                                      {!isValidId && <span className="absolute -top-3 right-0 text-[7px] font-black text-rose-500 uppercase tracking-tighter bg-white px-1">ID не найден</span>}
+                                                        <Trash2 className="w-3 h-3" />
+                                                      </button>
                                                     </div>
-                                                    <button 
-                                                      onClick={() => {
-                                                        const newIds = scenario.menuReturnSettings!.buttonBlockIds.filter((_, i) => i !== idx);
-                                                        updateScenarioState({ 
-                                                          ...scenario, 
-                                                          menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
-                                                        });
-                                                      }}
-                                                      className="p-1 text-rose-400 hover:bg-rose-50 hover:text-rose-600 rounded transition-colors"
-                                                    >
-                                                      <Trash2 className="w-3 h-3" />
-                                                    </button>
-                                                  </div>
-                                                );
-                                              })}
-                                              <button 
-                                                onClick={() => {
-                                                  updateScenarioState({ 
-                                                    ...scenario, 
-                                                    menuReturnSettings: { 
-                                                      ...scenario.menuReturnSettings!, 
-                                                      buttonBlockIds: [...scenario.menuReturnSettings!.buttonBlockIds, ""] 
-                                                    }
-                                                  });
-                                                }}
-                                                className="w-full py-1.5 border border-dashed border-emerald-300 rounded-lg text-[10px] font-bold text-emerald-600 hover:bg-emerald-100/50 flex items-center justify-center space-x-1.5 cursor-pointer"
-                                              >
-                                                <Plus className="w-3 h-3" />
-                                                <span>Добавить ID блока</span>
-                                              </button>
+                                                  );
+                                                })}
+                                                <button 
+                                                  onClick={() => {
+                                                    updateScenarioState({ 
+                                                      ...scenario, 
+                                                      menuReturnSettings: { 
+                                                        ...scenario.menuReturnSettings!, 
+                                                        buttonBlockIds: [...(scenario.menuReturnSettings?.buttonBlockIds || []), ""] 
+                                                      }
+                                                    });
+                                                  }}
+                                                  className="w-full py-1.5 border border-dashed border-emerald-300 rounded-lg text-[10px] font-bold text-emerald-600 hover:bg-emerald-100/50 flex items-center justify-center space-x-1.5 cursor-pointer shadow-sm active:scale-95 transition-transform"
+                                                >
+                                                  <Plus className="w-3 h-3" />
+                                                  <span>Добавить ID блока</span>
+                                                </button>
+                                              </div>
+                                              <p className="text-[7.5px] text-emerald-600 mt-2 font-black uppercase tracking-tight opacity-75 leading-tight">
+                                                * Настройки применятся ко ВСЕМ блокам этого типа в сценарии
+                                              </p>
                                             </div>
-                                            <p className="text-[8px] text-emerald-600 mt-2 italic font-bold">* Данные настройки применятся ко ВСЕМ блокам этого типа в сценарии</p>
                                           </div>
-                                        </div>
-                                      )}
+                                        )}
 
                                       {/* 2.5 Настройки кнопки */}
                                       {activeBlock.type === "button" && (
@@ -2006,7 +2006,7 @@ export default function App() {
                                       )}
 
                                       {/* 5. Настройка связей (Select-дропдауны прямого маппинга) */}
-                                      {activeBlock.type !== 'menu_return' && activeBlock.type !== 'menu' && activeBlock.type !== 'back' && (
+                                      {!isMenuReturn && activeBlock.type !== 'back' && (
                                         <div className="space-y-2.5 pt-3 border-t border-slate-100">
                                           <h5 className="text-[10px] font-black text-slate-800 uppercase tracking-widest">Переопределение связей:</h5>
                                           
