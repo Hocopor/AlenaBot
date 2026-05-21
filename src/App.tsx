@@ -1233,6 +1233,7 @@ export default function App() {
                     {(() => {
                       const coords: Record<string, { row: number; col: number }> = {};
                       const visited = new Set<string>();
+                      const mainFlowVisited = new Set<string>();
                       
                       // Находим корневые элементы (на которые никто не ссылается)
                       const inDegree: Record<string, number> = {};
@@ -1241,88 +1242,88 @@ export default function App() {
                       Object.values(scenario.blocks).forEach((b: ScenarioBlock) => {
                         if (b.nextBlockId) inDegree[b.nextBlockId] = (inDegree[b.nextBlockId] || 0) + 1;
                         if (b.rightBlockId) inDegree[b.rightBlockId] = (inDegree[b.rightBlockId] || 0) + 1;
-                        if (b.type === 'menu') {
-                          scenario.menu.forEach(m => {
-                            if (m.startBlockId) {
-                              inDegree[m.startBlockId] = (inDegree[m.startBlockId] || 0) + 1;
-                            }
-                          });
-                        }
                       });
 
-                      let currentRow = 0;
+                      let nextCol = 0;
 
-                      // Рекурсивный автоматический расчет сетки связей 2D
-                      function place(id: string | null | undefined, r: number, c: number) {
-                        if (!id || !scenario || visited.has(id)) return;
-                        visited.add(id);
-
-                        let finalR = r;
-                        let finalC = c;
+                      // Выстраиваем вертикальную цепочку в колонку
+                      function layoutChain(startId: string, col: number, startRow: number, isMain: boolean) {
+                        let currentId: string | null = startId;
+                        let r = startRow;
                         
-                        // Защита от наложения карточек друг на друга: если ячейка занята, сдвигаем правее
-                        while (Object.values(coords).some(p => p.row === finalR && p.col === finalC)) {
-                          finalC += 1;
-                        }
-
-                        coords[id] = { row: finalR, col: finalC };
-
-                        const b = scenario.blocks[id];
-                        if (b) {
-                          // Сначала ответвления выбора (вправо)
-                          if (b.rightBlockId) {
-                            place(b.rightBlockId, finalR, finalC + 1);
+                        while (currentId && !visited.has(currentId)) {
+                          visited.add(currentId);
+                          if (isMain) {
+                            mainFlowVisited.add(currentId);
                           }
-                          // Затем последующая цепочка диалога (вниз)
-                          if (b.nextBlockId) {
-                            place(b.nextBlockId, finalR + 1, finalC);
+                          
+                          // Защита от наложения карточек друг на друга внутри одной колонки
+                          while (Object.values(coords).some(p => p.row === r && p.col === col)) {
+                            r += 1;
                           }
-                          // Узел типа menu ветвится на все пункты главного меню
-                          if (b.type === 'menu') {
-                            let menuC = finalC;
+                          
+                          coords[currentId] = { row: r, col: col };
+                          
+                          const b = scenario.blocks[currentId];
+                          if (!b) break;
+
+                          // Переход вправо ( rightBlockId ) запускает новую колонку на том же уровне строки r
+                          if (b.rightBlockId && !visited.has(b.rightBlockId)) {
+                            const rightCol = nextCol++;
+                            layoutChain(b.rightBlockId, rightCol, r, isMain);
+                          }
+
+                          // Меню ветвится на подразделы
+                          if (b.type === 'menu' && scenario.menu) {
                             scenario.menu.forEach(m => {
-                              if (m.startBlockId) {
-                                place(m.startBlockId, finalR + 1, menuC);
-                                menuC += 1;
+                              if (m.startBlockId && !visited.has(m.startBlockId)) {
+                                const menuCol = nextCol++;
+                                layoutChain(m.startBlockId, menuCol, r + 1, isMain);
                               }
                             });
                           }
-                        }
-                        
-                        if (finalR > currentRow) {
-                          currentRow = finalR;
+
+                          // Идем вниз по текущему столбцу последовательно
+                          if (b.nextBlockId && !visited.has(b.nextBlockId)) {
+                            currentId = b.nextBlockId;
+                            r += 1;
+                          } else {
+                            currentId = null;
+                          }
                         }
                       }
 
-                      // 1. Сначала размещаем стартовый блок
-                      let rootRowOffset = 0;
-                      
+                      // 1. Сначала размещаем стартовую цепочку (главный поток)
                       if (scenario.startBlockId && !visited.has(scenario.startBlockId)) {
-                        place(scenario.startBlockId, rootRowOffset, 0);
-                        rootRowOffset = currentRow + 2;
+                        const startCol = nextCol++;
+                        layoutChain(scenario.startBlockId, startCol, 0, true);
                       }
 
-                      // 2. Затем размещаем остальные корневые блоки
+                      // 2. Затем размещаем стартовые блоки меню (также главный поток)
+                      if (scenario.menu) {
+                        scenario.menu.forEach(m => {
+                          if (m.startBlockId && !visited.has(m.startBlockId)) {
+                            const mCol = nextCol++;
+                            layoutChain(m.startBlockId, mCol, 0, true);
+                          }
+                        });
+                      }
+
+                      // 3. Затем размещаем остальные корневые блоки
                       Object.keys(inDegree).forEach(id => {
                         if (inDegree[id] === 0 && !visited.has(id)) {
-                          place(id, rootRowOffset, 0);
-                          rootRowOffset = currentRow + 2;
+                          const rootCol = nextCol++;
+                          layoutChain(id, rootCol, 0, false);
                         }
                       });
 
-                          // 3. Выстраиваем оставшиеся потерянные («сиротские») блоки в крайний правый столбец
-                          let maxCol = 0;
-                          Object.values(coords).forEach(p => {
-                            if (p.col > maxCol) maxCol = p.col;
-                          });
-
-                          let orphanRow = 0;
-                          Object.keys(scenario.blocks).forEach(id => {
-                            if (!visited.has(id)) {
-                              coords[id] = { row: orphanRow, col: maxCol + 2 };
-                              orphanRow += 1;
-                            }
-                          });
+                      // 4. Размещаем оставшиеся изолированные/разрозненные блоки
+                      Object.keys(scenario.blocks).forEach(id => {
+                        if (!visited.has(id)) {
+                          const orphanCol = nextCol++;
+                          layoutChain(id, orphanCol, 0, false);
+                        }
+                      });
 
 
                           // Базовая геометрия расположения на доске Miro
@@ -1468,7 +1469,7 @@ export default function App() {
                                     const x = pos.col * colWidth + 40;
                                     const y = pos.row * rowHeight + 40;
                                     const isSelected = selectedBlockId === id;
-                                    const isOrphan = !visited.has(id);
+                                    const isOrphan = !mainFlowVisited.has(id);
 
                                     return (
                                       <div
