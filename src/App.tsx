@@ -169,11 +169,8 @@ export default function App() {
   // Синхронизируем рефы с состоянием для использования в обработчиках событий
   useEffect(() => {
     zoomRef.current = zoom;
-  }, [zoom]);
-
-  useEffect(() => {
     panRef.current = pan;
-  }, [pan]);
+  }, [zoom, pan]);
 
   // Обработка Zoom через колесико (с привязкой к курсору)
   useEffect(() => {
@@ -181,7 +178,7 @@ export default function App() {
     if (!el) return;
 
     const handleWheel = (e: WheelEvent) => {
-      // Предотвращаем стандартный скролл страницы и масштабирование браузера
+      // Предотвращаем стандартный скролл страницы
       e.preventDefault();
 
       const rect = el.getBoundingClientRect();
@@ -191,23 +188,26 @@ export default function App() {
       const currentZoom = zoomRef.current;
       const currentPan = panRef.current;
 
-      // Используем экспоненциальное масштабирование для плавности и точности при любых уровнях зума
-      // Коэффициент 1.1 определяет скорость зума
-      const zoomFactor = Math.pow(1.1, -e.deltaY / 120);
-      const newZoom = Math.min(Math.max(0.1, currentZoom * zoomFactor), 5);
+      // Используем фиксированные шаги для более предсказуемого поведения колесика
+      const delta = -e.deltaY;
+      const factor = Math.pow(1.1, delta / 120);
+      const newZoom = Math.min(Math.max(0.1, currentZoom * factor), 5);
 
       if (newZoom !== currentZoom) {
-        // Вычисляем координаты курсора в "мировом" пространстве канваса
-        // worldPos = (screenPos - pan) / zoom
-        const canvasX = (mouseX - currentPan.x) / currentZoom;
-        const canvasY = (mouseY - currentPan.y) / currentZoom;
+        // Мировые координаты под курсором до масштабирования
+        const worldX = (mouseX - currentPan.x) / currentZoom;
+        const worldY = (mouseY - currentPan.y) / currentZoom;
 
-        // Новое положение pan, чтобы та же "мировая" точка осталась под курсором:
-        // mouseX = newPan.x + (canvasX * newZoom) => newPan.x = mouseX - (canvasX * newZoom)
-        const newPan = {
-          x: mouseX - canvasX * newZoom,
-          y: mouseY - canvasY * newZoom
-        };
+        // Вычисляем новый pan так, чтобы мировые координаты под курсором совпали с экранными
+        const newPanX = mouseX - worldX * newZoom;
+        const newPanY = mouseY - worldY * newZoom;
+
+        const newPan = { x: newPanX, y: newPanY };
+
+        // Сначала обновляем рефы, чтобы следующие события (которых может быть много в секунду)
+        // использовали уже обновленные значения, не дожидаясь ререндера React
+        zoomRef.current = newZoom;
+        panRef.current = newPan;
 
         setZoom(newZoom);
         setPan(newPan);
