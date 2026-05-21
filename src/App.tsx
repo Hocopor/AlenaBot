@@ -172,8 +172,9 @@ export default function App() {
     panRef.current = pan;
   }, [zoom, pan]);
 
-  // Обработка Zoom через колесико (с привязкой к курсору)
+  // Обработка Zoom через колесико (с привязкой к центру окна конструктора по просьбе пользователя)
   useEffect(() => {
+    // ВАЖНО: Следим за появлением элемента в DOM, так как конструктор рендерится условно
     const el = canvasRef.current;
     if (!el) return;
 
@@ -182,30 +183,35 @@ export default function App() {
       e.preventDefault();
 
       const rect = el.getBoundingClientRect();
-      const mouseX = e.clientX - rect.left;
-      const mouseY = e.clientY - rect.top;
+      if (rect.width === 0 || rect.height === 0) return;
+
+      // Пользователь просил: "Должно чётко в центр окошка конструктора приближать"
+      const pivotX = rect.width / 2;
+      const pivotY = rect.height / 2;
 
       const currentZoom = zoomRef.current;
       const currentPan = panRef.current;
 
-      // Используем фиксированные шаги для более предсказуемого поведения колесика
+      // Рассчитываем коэффициент масштабирования
       const delta = -e.deltaY;
       const factor = Math.pow(1.1, delta / 120);
-      const newZoom = Math.min(Math.max(0.1, currentZoom * factor), 5);
+      let newZoom = currentZoom * factor;
+      
+      // Ограничения для зума
+      newZoom = Math.min(Math.max(0.1, newZoom), 5);
 
       if (newZoom !== currentZoom) {
-        // Мировые координаты под курсором до масштабирования
-        const worldX = (mouseX - currentPan.x) / currentZoom;
-        const worldY = (mouseY - currentPan.y) / currentZoom;
+        // Вычисляем мировые координаты точки, которая сейчас в центре вьюпорта
+        const worldX = (pivotX - currentPan.x) / currentZoom;
+        const worldY = (pivotY - currentPan.y) / currentZoom;
 
-        // Вычисляем новый pan так, чтобы мировые координаты под курсором совпали с экранными
-        const newPanX = mouseX - worldX * newZoom;
-        const newPanY = mouseY - worldY * newZoom;
+        // Новое смещение, чтобы эта же мировая точка осталась в центре вьюпорта при новом зуме
+        const newPan = {
+          x: pivotX - worldX * newZoom,
+          y: pivotY - worldY * newZoom
+        };
 
-        const newPan = { x: newPanX, y: newPanY };
-
-        // Сначала обновляем рефы, чтобы следующие события (которых может быть много в секунду)
-        // использовали уже обновленные значения, не дожидаясь ререндера React
+        // Сначала обновляем рефы, чтобы следующие быстрые события колесика не использовали старые данные
         zoomRef.current = newZoom;
         panRef.current = newPan;
 
@@ -216,7 +222,8 @@ export default function App() {
 
     el.addEventListener("wheel", handleWheel, { passive: false });
     return () => el.removeEventListener("wheel", handleWheel);
-  }, []);
+    // Добавляем зависимости, которые влияют на рендеринг канваса
+  }, [adminTab, panelMode, !!scenario]);
 
   // Копирование в буфер
   const [copiedText, setCopiedText] = useState("");
