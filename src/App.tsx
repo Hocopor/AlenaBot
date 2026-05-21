@@ -163,6 +163,17 @@ export default function App() {
   const [dragStart, setDragStart] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [selectedBlockId, setSelectedBlockId] = useState<string | null>(null);
   const canvasRef = useRef<HTMLDivElement>(null);
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+
+  // Синхронизируем рефы с состоянием для использования в обработчиках событий
+  useEffect(() => {
+    zoomRef.current = zoom;
+  }, [zoom]);
+
+  useEffect(() => {
+    panRef.current = pan;
+  }, [pan]);
 
   // Обработка Zoom через колесико (с привязкой к курсору)
   useEffect(() => {
@@ -176,24 +187,31 @@ export default function App() {
       const rect = el.getBoundingClientRect();
       const mouseX = e.clientX - rect.left;
       const mouseY = e.clientY - rect.top;
-      const zoomDelta = e.deltaY * -0.002;
 
-      setZoom((prevZoom) => {
-        const newZoom = Math.min(Math.max(0.2, prevZoom + zoomDelta), 2);
-        if (newZoom === prevZoom) return prevZoom;
+      const currentZoom = zoomRef.current;
+      const currentPan = panRef.current;
 
-        setPan((prevPan) => {
-          const canvasX = (mouseX - prevPan.x) / prevZoom;
-          const canvasY = (mouseY - prevPan.y) / prevZoom;
+      // Используем экспоненциальное масштабирование для плавности и точности при любых уровнях зума
+      // Коэффициент 1.1 определяет скорость зума
+      const zoomFactor = Math.pow(1.1, -e.deltaY / 120);
+      const newZoom = Math.min(Math.max(0.1, currentZoom * zoomFactor), 5);
 
-          return {
-            x: mouseX - canvasX * newZoom,
-            y: mouseY - canvasY * newZoom
-          };
-        });
+      if (newZoom !== currentZoom) {
+        // Вычисляем координаты курсора в "мировом" пространстве канваса
+        // worldPos = (screenPos - pan) / zoom
+        const canvasX = (mouseX - currentPan.x) / currentZoom;
+        const canvasY = (mouseY - currentPan.y) / currentZoom;
 
-        return newZoom;
-      });
+        // Новое положение pan, чтобы та же "мировая" точка осталась под курсором:
+        // mouseX = newPan.x + (canvasX * newZoom) => newPan.x = mouseX - (canvasX * newZoom)
+        const newPan = {
+          x: mouseX - canvasX * newZoom,
+          y: mouseY - canvasY * newZoom
+        };
+
+        setZoom(newZoom);
+        setPan(newPan);
+      }
     };
 
     el.addEventListener("wheel", handleWheel, { passive: false });
