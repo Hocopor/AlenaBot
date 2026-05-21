@@ -1362,9 +1362,10 @@ export default function App() {
                       let nextCol = 0;
 
                       // Выстраиваем вертикальную цепочку в колонку
-                      function layoutChain(startId: string, col: number, startRow: number, isMain: boolean) {
+                      function layoutChain(startId: string, col: number, startRow: number, isMain: boolean): number {
                         let currentId: string | null = startId;
                         let r = startRow;
+                        let maxR = startRow;
                         
                         while (currentId && !visited.has(currentId)) {
                           visited.add(currentId);
@@ -1378,6 +1379,7 @@ export default function App() {
                           }
                           
                           coords[currentId] = { row: r, col: col };
+                          if (r > maxR) maxR = r;
                           
                           const b = scenario.blocks[currentId];
                           if (!b) break;
@@ -1385,17 +1387,20 @@ export default function App() {
                           // Переход вправо ( rightBlockId ) запускает новую колонку на том же уровне строки r
                           if (b.rightBlockId && !visited.has(b.rightBlockId)) {
                             const rightCol = nextCol++;
-                            layoutChain(b.rightBlockId, rightCol, r, isMain);
+                            const branchMaxR = layoutChain(b.rightBlockId, rightCol, r, isMain);
+                            if (branchMaxR > maxR) maxR = branchMaxR;
                           }
 
                           // Идем вниз по текущему столбцу последовательно
                           if (b.nextBlockId && !visited.has(b.nextBlockId)) {
                             currentId = b.nextBlockId;
-                            r += 1;
+                            // Сдвигаем текущий вертикальный ряд ниже, чем закончились любые правые ответвления выше
+                            r = maxR + 1;
                           } else {
                             currentId = null;
                           }
                         }
+                        return maxR;
                       }
 
                       // 1. Сначала размещаем стартовую цепочку (главный поток)
