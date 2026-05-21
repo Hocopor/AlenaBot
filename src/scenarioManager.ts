@@ -831,19 +831,44 @@ export class ScenarioManager {
       });
     }
 
-    // Проверяем все блоки в сценарии на корректность
-    Object.values(config.blocks).forEach((block) => {
+    // Проверка всех блоков в сценарии на корректность
+    const blocksArray = Object.values(config.blocks);
+    
+    // Предварительно найдем родителей для каждого блока (кто на кого ссылается через nextBlockId)
+    const parentMap: Record<string, ScenarioBlock> = {};
+    blocksArray.forEach(b => {
+      if (b.nextBlockId) parentMap[b.nextBlockId] = b;
+    });
+
+    blocksArray.forEach((block) => {
       const heading = `Блок [${block.type.toUpperCase()}] "${block.text ? block.text.substring(0, 30) : block.id}"`;
 
       // Проверка пустого текста
       if (block.type === 'text' || block.type === 'button' || block.type === 'link') {
-        if (!block.text || !block.text.trim()) {
-          errors.push({
-            blockId: block.id,
-            blockText: block.text,
-            message: `${heading} имеет пустое текстовое поле.`,
-            recommendation: "Заполните текстовое поле или удалите этот блок, если он не нужен."
-          });
+        const isTextEmpty = !block.text || !block.text.trim();
+        if (isTextEmpty) {
+          let shouldError = true;
+
+          // Блок ССЫЛКА может иметь пустой текст, если он "приклеивается" к предыдущему блоку
+          if (block.type === 'link') {
+            const parent = parentMap[block.id];
+            // Если есть родитель (блок над ним), и этот родитель - сообщение (text, file, audio),
+            // то ссылка приклеится к нему кнопкой. Это НЕ ошибка.
+            if (parent && (parent.type === 'text' || parent.type === 'file' || parent.type === 'audio')) {
+              shouldError = false;
+            }
+          }
+
+          if (shouldError) {
+            errors.push({
+              blockId: block.id,
+              blockText: block.text,
+              message: `${heading} имеет пустое текстовое поле.`,
+              recommendation: block.type === 'link' 
+                ? "Заполните текстовое поле (текст сообщения вместе со ссылкой). Пустое поле допускается только если ссылка идет сразу за блоком Текста, Файла или Аудио."
+                : "Заполните текстовое поле или удалите этот блок, если он не нужен."
+            });
+          }
         }
       }
 
