@@ -115,7 +115,6 @@ const defaultScenario: ScenarioConfig = {
       "type": "button",
       "text": "😮‍💨 Устала, но продолжаю тянуть",
       "isOnce": true,
-      "rightBlockId": "welcome_3_txt",
       "nextBlockId": "wb_q1_b2"
     },
     "wb_q1_b2": {
@@ -123,7 +122,6 @@ const defaultScenario: ScenarioConfig = {
       "type": "button",
       "text": "😶 Всё серое — и не знаю почему",
       "isOnce": true,
-      "rightBlockId": "welcome_3_txt",
       "nextBlockId": "wb_q1_b3"
     },
     "wb_q1_b3": {
@@ -131,7 +129,6 @@ const defaultScenario: ScenarioConfig = {
       "type": "button",
       "text": "😰 Тревога, которая не отпускает",
       "isOnce": true,
-      "rightBlockId": "welcome_3_txt",
       "nextBlockId": "wb_q1_b4"
     },
     "wb_q1_b4": {
@@ -139,7 +136,6 @@ const defaultScenario: ScenarioConfig = {
       "type": "button",
       "text": "💭Не понимаю себя и что со мной",
       "isOnce": true,
-      "rightBlockId": "welcome_3_txt",
       "nextBlockId": "wb_q1_b5"
     },
     "wb_q1_b5": {
@@ -147,7 +143,12 @@ const defaultScenario: ScenarioConfig = {
       "type": "button",
       "text": "🌀 Всё сразу",
       "isOnce": true,
-      "rightBlockId": "welcome_3_txt"
+      "nextBlockId": "wait_q1"
+    },
+    "wait_q1": {
+      "id": "wait_q1",
+      "type": "wait_button",
+      "nextBlockId": "welcome_3_txt"
     },
     "welcome_3_txt": {
       "id": "welcome_3_txt",
@@ -160,7 +161,6 @@ const defaultScenario: ScenarioConfig = {
       "type": "button",
       "text": "Я просто ленивая",
       "isOnce": true,
-      "rightBlockId": "welcome_4_txt",
       "nextBlockId": "wb_q2_b2"
     },
     "wb_q2_b2": {
@@ -168,7 +168,6 @@ const defaultScenario: ScenarioConfig = {
       "type": "button",
       "text": "Надо взять себя в руки",
       "isOnce": true,
-      "rightBlockId": "welcome_4_txt",
       "nextBlockId": "wb_q2_b3"
     },
     "wb_q2_b3": {
@@ -176,7 +175,6 @@ const defaultScenario: ScenarioConfig = {
       "type": "button",
       "text": "У других всё норм — только у меня",
       "isOnce": true,
-      "rightBlockId": "welcome_4_txt",
       "nextBlockId": "wb_q2_b4"
     },
     "wb_q2_b4": {
@@ -184,7 +182,12 @@ const defaultScenario: ScenarioConfig = {
       "type": "button",
       "text": "Я не знаю, чего хочу",
       "isOnce": true,
-      "rightBlockId": "welcome_4_txt"
+      "nextBlockId": "wait_q2"
+    },
+    "wait_q2": {
+      "id": "wait_q2",
+      "type": "wait_button",
+      "nextBlockId": "welcome_4_txt"
     },
     "welcome_4_txt": {
       "id": "welcome_4_txt",
