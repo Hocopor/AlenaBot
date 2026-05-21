@@ -15,6 +15,7 @@ export interface ScenarioBlock {
   menuMessageText?: string;
   menuGateMessageText?: string;
   menuGateButtonText?: string;
+  linkButtonText?: string;
   menuAttachedBlocks?: string[];
 }
 

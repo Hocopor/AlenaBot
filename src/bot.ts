@@ -237,6 +237,14 @@ export class TelegramBotService {
   /**
    * Запуск выполнения сценария по блокам
    */
+  private findAttachedLink(config: any, block: any): any | null {
+    if (!block.nextBlockId) return null;
+    const next = config.blocks[block.nextBlockId];
+    // Ссылка считается "прикрепленной", если у нее нет собственного текста сообщения
+    if (next && next.type === 'link' && !next.text) return next;
+    return null;
+  }
+
   public async executeBlock(ctx: any, blockId: string | null | undefined, userId: number, isStartBlock: boolean = false) {
     if (!blockId) return;
 
@@ -298,16 +306,25 @@ export class TelegramBotService {
               reply_markup: btnKb 
             });
           } else {
+            const attachedLink = this.findAttachedLink(config, block);
             const extraOpts: any = { parse_mode: "HTML" };
             // При разблокировке меню или на старте - обновляем Reply клавиатуру
             if (isStartBlock || block.isMenuUnlock) {
               extraOpts.reply_markup = this.makeReplyKeyboard(session.menuUnlocked || block.isMenuUnlock || false);
             }
             
+            if (attachedLink) {
+              const label = attachedLink.linkButtonText || attachedLink.text || "Открыть ссылку";
+              const kb = extraOpts.reply_markup instanceof InlineKeyboard ? extraOpts.reply_markup : new InlineKeyboard();
+              kb.url(label, attachedLink.url).row();
+              extraOpts.reply_markup = kb;
+            }
+            
             await ctx.reply(block.text, extraOpts);
             
-            if (block.nextBlockId) {
-              await this.executeBlock(ctx, block.nextBlockId, userId);
+            const nextToExec = attachedLink ? attachedLink.nextBlockId : block.nextBlockId;
+            if (nextToExec) {
+              await this.executeBlock(ctx, nextToExec, userId);
             }
           }
           break;
@@ -315,50 +332,78 @@ export class TelegramBotService {
         case "file": {
           if (block.url) {
             try {
+              const attachedLink = this.findAttachedLink(config, block);
+              let replyMarkup: any = undefined;
+              if (attachedLink) {
+                const label = attachedLink.linkButtonText || attachedLink.text || "Открыть ссылку";
+                replyMarkup = new InlineKeyboard().url(label, attachedLink.url);
+              }
+
               if (block.url.startsWith("http://") || block.url.startsWith("https://")) {
-                await ctx.replyWithDocument(block.url);
+                await ctx.replyWithDocument(block.url, { reply_markup: replyMarkup });
               } else {
                 let localPath = block.url;
                 if (localPath.startsWith("/")) localPath = localPath.substring(1);
                 const fullPath = path.join(process.cwd(), localPath);
                 if (fs.existsSync(fullPath)) {
-                  await ctx.replyWithDocument(new InputFile(fullPath));
+                  await ctx.replyWithDocument(new InputFile(fullPath), { reply_markup: replyMarkup });
                 } else {
                   await ctx.reply(`[Файл не найден: ${block.url}]`);
                 }
               }
+
+              const nextToExec = attachedLink ? attachedLink.nextBlockId : block.nextBlockId;
+              if (nextToExec) await this.executeBlock(ctx, nextToExec, userId);
             } catch (err: any) {
               await ctx.reply(`[Ошибка отправки файла]`);
+              if (block.nextBlockId) await this.executeBlock(ctx, block.nextBlockId, userId);
             }
+          } else {
+            if (block.nextBlockId) await this.executeBlock(ctx, block.nextBlockId, userId);
           }
-          if (block.nextBlockId) await this.executeBlock(ctx, block.nextBlockId, userId);
           break;
         }
         case "audio": {
           if (block.url) {
             try {
+              const attachedLink = this.findAttachedLink(config, block);
+              let replyMarkup: any = undefined;
+              if (attachedLink) {
+                const label = attachedLink.linkButtonText || attachedLink.text || "Открыть ссылку";
+                replyMarkup = new InlineKeyboard().url(label, attachedLink.url);
+              }
+
               if (block.url.startsWith("http://") || block.url.startsWith("https://")) {
-                await ctx.replyWithAudio(block.url);
+                await ctx.replyWithAudio(block.url, { reply_markup: replyMarkup });
               } else {
                 let localPath = block.url;
                 if (localPath.startsWith("/")) localPath = localPath.substring(1);
                 const fullPath = path.join(process.cwd(), localPath);
                 if (fs.existsSync(fullPath)) {
-                  await ctx.replyWithAudio(new InputFile(fullPath));
+                  await ctx.replyWithAudio(new InputFile(fullPath), { reply_markup: replyMarkup });
                 } else {
                   await ctx.reply(`[Аудио не найдено: ${block.url}]`);
                 }
               }
+
+              const nextToExec = attachedLink ? attachedLink.nextBlockId : block.nextBlockId;
+              if (nextToExec) await this.executeBlock(ctx, nextToExec, userId);
             } catch (err: any) {
               await ctx.reply(`[Ошибка отправки аудио]`);
+              if (block.nextBlockId) await this.executeBlock(ctx, block.nextBlockId, userId);
             }
+          } else {
+            if (block.nextBlockId) await this.executeBlock(ctx, block.nextBlockId, userId);
           }
-          if (block.nextBlockId) await this.executeBlock(ctx, block.nextBlockId, userId);
           break;
         }
         case "link": {
-          const linkKb = new InlineKeyboard().url(block.text || "Открыть", block.url || "");
-          await ctx.reply(block.text || "Ссылка:", { reply_markup: linkKb });
+          // Если блокСсылка попал сюда напрямую (не был прикреплен выше), 
+          // либо если у него есть собственный текст сообщения.
+          const label = block.linkButtonText || block.text || "Открыть ссылку";
+          const messageText = block.text || "Ссылка:";
+          const linkKb = new InlineKeyboard().url(label, block.url || "");
+          await ctx.reply(messageText, { reply_markup: linkKb });
           if (block.nextBlockId) await this.executeBlock(ctx, block.nextBlockId, userId);
           break;
         }

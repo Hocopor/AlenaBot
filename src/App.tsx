@@ -73,6 +73,7 @@ interface ScenarioBlock {
   menuMessageText?: string;
   menuGateMessageText?: string;
   menuGateButtonText?: string;
+  linkButtonText?: string;
   menuAttachedBlocks?: string[];
 }
 
@@ -700,9 +701,10 @@ export default function App() {
     const newBlock: ScenarioBlock = {
       id: newId,
       type: type,
-      text: type === "pause" ? "" : (type === "file" ? "Прикрепленный файл" : type === "audio" ? "Аудиозапись" : (type === "menu" ? (globalMenu?.text || "Вернуться в меню") : "Новая карточка. Отредактируйте текст...")),
+      text: type === "pause" || type === "link" ? "" : (type === "file" ? "Прикрепленный файл" : type === "audio" ? "Аудиозапись" : (type === "menu" ? (globalMenu?.text || "Вернуться в меню") : "Новая карточка. Отредактируйте текст...")),
       seconds: type === "pause" ? 5 : undefined,
       url: type === "link" ? "https://" : (type === "file" || type === "audio") ? "" : undefined,
+      linkButtonText: type === "link" ? "Открыть ссылку" : undefined,
       menuGateMessageText: type === "menu" ? (globalMenu?.menuGateMessageText || "Для перехода к выбору разделов нажмите на кнопку ниже ⬇️") : undefined,
       menuGateButtonText: type === "menu" ? (globalMenu?.menuGateButtonText || "Вернуться в меню") : undefined,
       menuMessageText: type === "menu" ? (globalMenu?.menuMessageText || "Сделай свой выбор ⬇️") : undefined,
@@ -1836,10 +1838,10 @@ export default function App() {
                                       </div>
 
                                       {/* 2. Текст сообщения / кнопка */}
-                                      {(activeBlock.type === "text" || activeBlock.type === "button" || activeBlock.type === "link" || activeBlock.type === "back") && (
+                                      {(activeBlock.type === "text" || activeBlock.type === "button" || activeBlock.type === "back") && (
                                         <div>
                                           <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                                            {activeBlock.type === "button" ? "Текст кнопки выбора" : (activeBlock.type === "menu" ? "Текст самой кнопки" : "Отправляемый текст сообщения")}
+                                            {activeBlock.type === "button" ? "Текст кнопки выбора" : "Отправляемый текст сообщения"}
                                           </label>
                                           {activeBlock.type === "text" ? (
                                             <textarea
@@ -1854,10 +1856,54 @@ export default function App() {
                                               type="text"
                                               value={activeBlock.text || ""}
                                               onChange={(e) => handleUpdateBlockField(activeBlock.id, { text: e.target.value })}
-                                              placeholder={activeBlock.type === "menu" ? "Например: Вернуться в меню" : "Текст на кнопке"}
+                                              placeholder="Текст на кнопке"
                                               className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-700 font-bold"
                                             />
                                           )}
+                                        </div>
+                                      )}
+
+                                      {/* Логика "Ссылка" */}
+                                      {activeBlock.type === "link" && (
+                                        <div className="space-y-4 bg-sky-50/50 p-4 rounded-xl border border-sky-100 mt-2">
+                                          <div>
+                                            <label className="block text-[9px] font-black text-sky-800 uppercase tracking-widest mb-1">
+                                              1. Текст сообщения (необязательно):
+                                            </label>
+                                            <textarea
+                                              value={activeBlock.text || ""}
+                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { text: e.target.value })}
+                                              rows={3}
+                                              placeholder="Если оставить пустым — ссылка прикрепится к предыдущему сообщению..."
+                                              className="w-full text-xs px-2.5 py-1.5 border border-sky-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 leading-normal font-sans text-slate-700 bg-white"
+                                            />
+                                          </div>
+
+                                          <div>
+                                            <label className="block text-[9px] font-black text-sky-800 uppercase tracking-widest mb-1">
+                                              2. Текст названия ссылки:
+                                            </label>
+                                            <input
+                                              type="text"
+                                              value={activeBlock.linkButtonText || ""}
+                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { linkButtonText: e.target.value })}
+                                              placeholder="Например: Перейти на сайт"
+                                              className="w-full text-xs px-2.5 py-1.5 border border-sky-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-700 bg-white font-bold"
+                                            />
+                                          </div>
+
+                                          <div>
+                                            <label className="block text-[9px] font-black text-sky-800 uppercase tracking-widest mb-1">
+                                              3. Сама ссылка (URL):
+                                            </label>
+                                            <input
+                                              type="text"
+                                              value={activeBlock.url || ""}
+                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { url: e.target.value })}
+                                              placeholder="https://example.com"
+                                              className="w-full text-xs px-2.5 py-1.5 border border-sky-100 rounded-lg focus:outline-none focus:ring-1 focus:ring-sky-400 text-slate-700 bg-white"
+                                            />
+                                          </div>
                                         </div>
                                       )}
 
