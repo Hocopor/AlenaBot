@@ -70,6 +70,8 @@ interface ScenarioBlock {
   isOnce?: boolean;
   nextBlockId?: string | null;
   rightBlockId?: string | null;
+  menuMessageText?: string;
+  menuAttachedBlocks?: string[];
 }
 
 interface ScenarioMenuButton {
@@ -1058,79 +1060,35 @@ export default function App() {
                 <button
                   onClick={() => setDevTab("status")}
                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    devTab === "status" ? "bg-slate-800 text-emerald-400 border border-slate-700" : "text-slate-400 hover:text-slate-200"
+                    devTab === "status" ? "bg-slate-800 text-emerald-400 shadow-xs border border-slate-700" : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  📊 Статус сервера
+                  📟 Статус севера
                 </button>
                 <button
                   onClick={() => setDevTab("logs")}
                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    devTab === "logs" ? "bg-slate-800 text-emerald-400 border border-slate-700" : "text-slate-400 hover:text-slate-200"
+                    devTab === "logs" ? "bg-slate-800 text-emerald-400 shadow-xs border border-slate-700" : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  💻 Консоль вызовов
+                  🪵 Логи контейнера
                 </button>
                 <button
                   onClick={() => setDevTab("guide")}
                   className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    devTab === "guide" ? "bg-slate-800 text-emerald-400 border border-slate-700" : "text-slate-400 hover:text-slate-200"
+                    devTab === "guide" ? "bg-slate-800 text-emerald-400 shadow-xs border border-slate-700" : "text-slate-400 hover:text-slate-200"
                   }`}
                 >
-                  📓 Справка Ubuntu 24
+                  📝 Справка
                 </button>
               </div>
             )}
-
-            {/* Выход */}
-            <div className="flex items-center space-x-2">
-              <button 
-                onClick={handleLogout}
-                className="inline-flex items-center px-3 py-1.5 border border-rose-200 text-xs font-bold rounded-lg bg-white hover:bg-rose-50 text-rose-600 focus:outline-none transition-all duration-200 cursor-pointer"
-              >
-                Выйти
-              </button>
-            </div>
 
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-
-        {/* ТОСТЕР-УВЕДОМЛЕНИЕ */}
-        <AnimatePresence>
-          {toastMessage && (
-            <motion.div
-              initial={{ opacity: 0, y: -20 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -20 }}
-              className="fixed top-20 left-1/2 transform -translate-x-1/2 z-50 bg-slate-900 border border-slate-800 text-slate-100 text-xs font-bold px-6 py-3 rounded-xl shadow-lg flex items-center space-x-2.5"
-            >
-              <Check className="h-4 w-4 text-emerald-500" />
-              <span>{toastMessage}</span>
-            </motion.div>
-          )}
-        </AnimatePresence>
-
-        {/* ОШИБКА TELEGRAM ТОКЕНА */}
-        {status && !status.hasToken && (
-          <div className="bg-rose-50 border border-rose-100 rounded-xl p-4 mb-6 flex flex-col md:flex-row md:items-center justify-between">
-            <div className="flex items-center space-x-3">
-              <AlertTriangle className="h-5 w-5 text-rose-500 shrink-0" />
-              <div>
-                <h4 className="text-xs font-bold text-rose-900">Токен Telegram бота отсутствует!</h4>
-                <p className="text-[11px] text-rose-700 mt-0.5">Пожалуйста, ведите ваш Bot Token из @BotFather на вкладке «Настройки системы», чтобы запустить живой цикл бота.</p>
-              </div>
-            </div>
-            <button 
-              onClick={() => { setAdminTab("settings"); setPanelMode("admin"); }}
-              className="mt-3 md:mt-0 text-xs bg-rose-600 hover:bg-rose-700 text-white font-bold py-1.5 px-3 rounded-lg shadow-xs transition-colors"
-            >
-              Ввести токен
-            </button>
-          </div>
-        )}
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
 
         {/* ------------------------------------------- */}
         {/* РЕЖИМ 1: ОСНОВНАЯ АДМИНКА (АДМИНИСТРАТОР) */}
@@ -1209,16 +1167,16 @@ export default function App() {
                   </div>
                 </div>
 
-                {/* Основная рабочая сетка */}
-                <div className="flex-1 mt-4 relative h-[75vh]">
-                  
-                  {/* Рабочая область: Miro-доска */}
-                  <div className="w-full h-full border border-slate-200 rounded-xl overflow-hidden shadow-xs relative bg-slate-50">
-                    
-                    {/* Кнопки сброса масштаба */}
-                    <div className="absolute bottom-6 left-1/2 -translate-x-1/2 z-20 flex bg-white/90 backdrop-blur border border-slate-200 shadow-md rounded-xl overflow-hidden p-1 space-x-1">
-                      <button onClick={() => setZoom(z => Math.max(0.2, z - 0.1))} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"><Minus className="h-4 w-4" /></button>
-                      <div className="flex items-center px-2 min-w-[60px] justify-center text-xs font-bold text-slate-600">
+                {/* Основное полотно Miro Доски */}
+                <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs flex flex-col gap-4">
+                  <div className="flex flex-wrap justify-between items-center gap-3 bg-slate-50 p-2.5 rounded-xl border border-slate-100">
+                    <div className="flex items-center space-x-1.5 capitalize text-xs font-bold text-slate-600">
+                      <span>Навигация по холсту: зажмите левую кнопку мыши для панорамирования (drag), используйте колесико для зума</span>
+                    </div>
+
+                    <div className="flex items-center space-x-1">
+                      <button onClick={() => setZoom(z => Math.max(0.5, z - 0.1))} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"><Minus className="h-4 w-4" /></button>
+                      <div className="flex items-center justify-center text-xs font-bold text-slate-600">
                         {Math.round(zoom * 100)}%
                       </div>
                       <button onClick={() => setZoom(z => Math.min(2, z + 0.1))} className="w-8 h-8 flex items-center justify-center text-slate-500 hover:bg-slate-100 rounded-lg transition-colors"><Plus className="h-4 w-4" /></button>
@@ -1228,10 +1186,11 @@ export default function App() {
                         <span>СБРОС ВИДА</span>
                       </button>
                     </div>
+                  </div>
 
-                    {/* Список карточек в формате Miro-доски */}
-                    {(() => {
-                      const coords: Record<string, { row: number; col: number }> = {};
+                  {/* Список карточек в формате Miro-доски */}
+                  {(() => {
+                    const coords: Record<string, { row: number; col: number }> = {};
                       const visited = new Set<string>();
                       const mainFlowVisited = new Set<string>();
                       
@@ -1271,16 +1230,6 @@ export default function App() {
                           if (b.rightBlockId && !visited.has(b.rightBlockId)) {
                             const rightCol = nextCol++;
                             layoutChain(b.rightBlockId, rightCol, r, isMain);
-                          }
-
-                          // Меню ветвится на подразделы
-                          if (b.type === 'menu' && scenario.menu) {
-                            scenario.menu.forEach(m => {
-                              if (m.startBlockId && !visited.has(m.startBlockId)) {
-                                const menuCol = nextCol++;
-                                layoutChain(m.startBlockId, menuCol, r + 1, isMain);
-                              }
-                            });
                           }
 
                           // Идем вниз по текущему столбцу последовательно
@@ -1432,31 +1381,6 @@ export default function App() {
                                         );
                                       }
 
-                                      // Связи ко всем рут-поинтам пунктов меню у блока "menu"
-                                      if (block.type === 'menu') {
-                                        scenario.menu.forEach((m, idx) => {
-                                          if (m.startBlockId && coords[m.startBlockId]) {
-                                            const rp = coords[m.startBlockId];
-                                            const startX = x + cardWidth / 4 + (cardWidth / 2) * (idx / Math.max(1, scenario.menu.length));
-                                            const startY = y + cardHeight;
-                                            const endX = rp.col * colWidth + 40 + cardWidth / 2;
-                                            const endY = rp.row * rowHeight + 40;
-                                            lines.push(
-                                              <g key={`${id}-to-menu-${m.id}`} className="opacity-40 hover:opacity-90 transition-opacity">
-                                                <path 
-                                                  d={getBezierPath(startX, startY, endX, endY, false)} 
-                                                  fill="none" 
-                                                  stroke="#f59e0b" 
-                                                  strokeWidth="2"
-                                                  strokeDasharray="6 6"
-                                                  markerEnd="url(#arrow-menu)" 
-                                                />
-                                              </g>
-                                            );
-                                          }
-                                        });
-                                      }
-
                                       return lines;
                                     })}
                                   </svg>
@@ -1541,7 +1465,7 @@ export default function App() {
                                               {block.type === 'link' && "Внешняя Ссылка"}
                                               {block.type === 'pause' && "Задержка"}
                                               {block.type === 'back' && "Кнопка Назад"}
-                                              {block.type === 'menu' && "Главное меню"}
+                                              {block.type === 'menu' && "Кнопка «В меню»"}
                                               {block.type === 'wait_button' && "Ожидание действия"}
                                               {block.type === 'file' && "Файл документ"}
                                               {block.type === 'audio' && "Аудиофайл"}
@@ -1590,16 +1514,18 @@ export default function App() {
 
                                         {/* ИНТЕРАКТИВНЫЕ ПЛЮСИКИ ДОБАВЛЕНИЯ КАРТОЧЕК */}
                                         {/* Плюс вниз (relation: next) */}
-                                        <button
-                                          className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center border border-white shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-all z-25"
-                                          onClick={(e) => {
-                                            e.stopPropagation();
-                                            setActiveAddPopover({ blockId: id, relation: "next" });
-                                          }}
-                                          title="Вставить следующее действие по цепочке ниже"
-                                        >
-                                          <Plus className="h-3 w-3" />
-                                        </button>
+                                        {block.type !== 'menu' && (
+                                          <button
+                                            className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center border border-white shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-all z-25"
+                                            onClick={(e) => {
+                                              e.stopPropagation();
+                                              setActiveAddPopover({ blockId: id, relation: "next" });
+                                            }}
+                                            title="Вставить следующее действие по цепочке ниже"
+                                          >
+                                            <Plus className="h-3 w-3" />
+                                          </button>
+                                        )}
 
                                         {/* Кнопки перемещения вверх/вниз для цепочки */}
                                         {isSelected && (
@@ -1706,7 +1632,21 @@ export default function App() {
                                         <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1.5">Тип действия элемента:</label>
                                         <select
                                           value={activeBlock.type}
-                                          onChange={(e) => handleUpdateBlockField(activeBlock.id, { type: e.target.value as ScenarioBlock["type"] })}
+                                          onChange={(e) => {
+                                            const newType = e.target.value as ScenarioBlock["type"];
+                                            const fields: Partial<ScenarioBlock> = { type: newType };
+                                            if (newType === "menu") {
+                                              fields.nextBlockId = null;
+                                              fields.rightBlockId = null;
+                                              if (!activeBlock.menuMessageText) {
+                                                fields.menuMessageText = "";
+                                              }
+                                              if (!activeBlock.menuAttachedBlocks) {
+                                                fields.menuAttachedBlocks = [];
+                                              }
+                                            }
+                                            handleUpdateBlockField(activeBlock.id, fields);
+                                          }}
                                           className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-400 focus:outline-none bg-slate-50 font-bold text-slate-700"
                                         >
                                           <option value="text">📝 Сообщение-Текст</option>
@@ -1725,7 +1665,7 @@ export default function App() {
                                       {(activeBlock.type === "text" || activeBlock.type === "button" || activeBlock.type === "link" || activeBlock.type === "back" || activeBlock.type === "menu") && (
                                         <div>
                                           <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">
-                                            {activeBlock.type === "button" ? "Текст кнопки выбора" : "Отправляемый текст сообщения"}
+                                            {activeBlock.type === "button" ? "Текст кнопки выбора" : (activeBlock.type === "menu" ? "Текст самой кнопки" : "Отправляемый текст сообщения")}
                                           </label>
                                           {activeBlock.type === "text" ? (
                                             <textarea
@@ -1740,10 +1680,94 @@ export default function App() {
                                               type="text"
                                               value={activeBlock.text || ""}
                                               onChange={(e) => handleUpdateBlockField(activeBlock.id, { text: e.target.value })}
-                                              placeholder="Текст на кнопке"
+                                              placeholder={activeBlock.type === "menu" ? "Например: Вернуться в меню" : "Текст на кнопке"}
                                               className="w-full text-xs px-2.5 py-1.5 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-700 font-bold"
                                             />
                                           )}
+                                        </div>
+                                      )}
+
+                                      {/* Внутренняя логика кнопки "В меню" */}
+                                      {activeBlock.type === "menu" && (
+                                        <div className="space-y-3 bg-emerald-50/50 p-3 rounded-xl border border-emerald-100 mt-2">
+                                          <div>
+                                            <label className="block text-[9px] font-black text-emerald-800 uppercase tracking-widest mb-1">
+                                              Сообщение при клике:
+                                            </label>
+                                            <textarea
+                                              value={activeBlock.menuMessageText || ""}
+                                              onChange={(e) => handleUpdateBlockField(activeBlock.id, { menuMessageText: e.target.value })}
+                                              rows={3}
+                                              placeholder="Введите текст, который бот пришлет при клике на эту кнопку..."
+                                              className="w-full text-xs px-2 py-1 border border-slate-200 bg-white rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-400 text-slate-750"
+                                            />
+                                          </div>
+
+                                          <div className="space-y-1.5">
+                                            <div className="flex items-center justify-between">
+                                              <label className="block text-[9px] font-black text-emerald-800 uppercase tracking-widest">
+                                                Прикрепленные кнопки выбора:
+                                              </label>
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  const currentAttached = activeBlock.menuAttachedBlocks || [];
+                                                  handleUpdateBlockField(activeBlock.id, {
+                                                    menuAttachedBlocks: [...currentAttached, ""]
+                                                  });
+                                                }}
+                                                className="w-5 h-5 flex items-center justify-center rounded-md bg-emerald-600 text-white hover:bg-emerald-700 transition-colors cursor-pointer"
+                                                title="Добавить кнопку"
+                                              >
+                                                <Plus className="h-3 w-3" />
+                                              </button>
+                                            </div>
+
+                                            {(activeBlock.menuAttachedBlocks || []).map((attachedId, idx) => (
+                                              <div key={idx} className="flex items-center space-x-1">
+                                                <select
+                                                  value={attachedId}
+                                                  onChange={(e) => {
+                                                    const nextAttached = [...(activeBlock.menuAttachedBlocks || [])];
+                                                    nextAttached[idx] = e.target.value;
+                                                    handleUpdateBlockField(activeBlock.id, {
+                                                      menuAttachedBlocks: nextAttached
+                                                    });
+                                                  }}
+                                                  className="flex-1 text-[11px] px-2 py-1 border border-slate-200 bg-white rounded-lg focus:outline-none"
+                                                >
+                                                  <option value="">-- Выберите блок-кнопку --</option>
+                                                  {Object.keys(scenario.blocks).map((blkId) => {
+                                                    if (blkId === activeBlock.id) return null;
+                                                    const b = scenario.blocks[blkId];
+                                                    return (
+                                                      <option key={blkId} value={blkId}>
+                                                        {blkId} ({b?.type}: {b?.text?.substring(0, 24)}...)
+                                                      </option>
+                                                    );
+                                                  })}
+                                                </select>
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    const nextAttached = (activeBlock.menuAttachedBlocks || []).filter((_, i) => i !== idx);
+                                                    handleUpdateBlockField(activeBlock.id, {
+                                                      menuAttachedBlocks: nextAttached
+                                                    });
+                                                  }}
+                                                  className="w-6 h-6 flex items-center justify-center text-rose-500 hover:bg-rose-50 rounded-lg border border-transparent hover:border-rose-100 transition-colors"
+                                                  title="Удалить привязку"
+                                                >
+                                                  <Trash2 className="h-3.5 w-3.5" />
+                                                </button>
+                                              </div>
+                                            ))}
+                                            {(activeBlock.menuAttachedBlocks || []).length === 0 && (
+                                              <p className="text-[9px] text-slate-400 font-bold italic">
+                                                Нет прикрепленных кнопок. Нажмите +, чтобы добавить.
+                                              </p>
+                                            )}
+                                          </div>
                                         </div>
                                       )}
 
@@ -1897,9 +1921,7 @@ export default function App() {
                           );
                         })()}
 
-                      </div>
-                    </div>
-
+                </div>
               </div>
             )}
 

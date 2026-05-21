@@ -12,6 +12,8 @@ export interface ScenarioBlock {
   isMenuUnlock?: boolean;
   nextBlockId?: string | null;  // Ссылка на следующий блок вниз
   rightBlockId?: string | null; // Ссылка на блок справа (для типа button)
+  menuMessageText?: string;
+  menuAttachedBlocks?: string[];
 }
 
 export interface ScenarioMenuButton {

@@ -375,9 +375,39 @@ export class TelegramBotService {
           break;
         }
         case "menu": {
-          const configLink = config.contactLink || "https://t.me/ibanezebi64";
-          await ctx.reply(botConfig.texts.backToMenuHeader, {
-            reply_markup: this.makeMainMenuKeyboard()
+          // Разблокируем интерактивную реплай-кнопку на клавиатуре
+          sessionManager.updateSession(userId, { menuUnlocked: true });
+
+          const messageText = block.menuMessageText || block.text || botConfig.texts.backToMenuHeader;
+          const attachedIds = block.menuAttachedBlocks || [];
+
+          let replyMarkup;
+          if (attachedIds.length > 0) {
+            const btnKb = new InlineKeyboard();
+            attachedIds.forEach((attachedId) => {
+              const btn = config.blocks[attachedId];
+              if (btn) {
+                const customText = btn.text || '';
+                const isChecked = session.checkedButtons?.includes(btn.id);
+                // Если у кнопки есть url - это внешняя ссылка; иначе бэкэнд-триггер blk_btn_...
+                const label = btn.url ? customText : (btn.rightBlockId ? customText : (isChecked ? `✅ ${customText}` : customText));
+                
+                if (btn.url) {
+                  btnKb.url(label, btn.url).row();
+                } else {
+                  btnKb.text(label, `blk_btn_${btn.id}`).row();
+                }
+              }
+            });
+            replyMarkup = btnKb;
+          } else {
+            // Если привязок нет, используем дефолтные кнопки главного меню
+            replyMarkup = this.makeMainMenuKeyboard();
+          }
+
+          await ctx.reply(messageText, {
+            parse_mode: "HTML",
+            reply_markup: replyMarkup
           });
           break;
         }
