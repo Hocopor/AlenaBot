@@ -225,15 +225,31 @@ export default function App() {
     showToast("Вид доски отцентрирован 🎯");
   };
 
-  // Расчет плавной кривой Безье для связей
+  // Расчет ступенчатой кривой для минимизации визуального хаоса
   const getBezierPath = (x1: number, y1: number, x2: number, y2: number, isRight: boolean) => {
+    const deltaX = x2 - x1;
+    const deltaY = y2 - y1;
+    
     if (isRight) {
-      const controlX = x1 + Math.max(80, (x2 - x1) * 0.45);
-      return `M ${x1} ${y1} C ${controlX} ${y1}, ${x2 - Math.max(80, (x2 - x1) * 0.45)} ${y2}, ${x2} ${y2}`;
+      // S-образный изгиб с более жесткими контрольными точками для "прямоугольного" вида
+      const c1x = x1 + Math.abs(deltaX) * 0.5;
+      const c1y = y1;
+      const c2x = x1 + Math.abs(deltaX) * 0.5;
+      const c2y = y2;
+      return `M ${x1} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}`;
     } else {
-      const controlY = y1 + Math.max(60, (y2 - y1) * 0.45);
-      return `M ${x1} ${y1} C ${x1} ${controlY}, ${x2} ${y2 - Math.max(60, (y2 - y1) * 0.45)}, ${x2} ${y2}`;
+      // Вертикальный Z-образный изгиб
+      const c1x = x1;
+      const c1y = y1 + Math.abs(deltaY) * 0.5;
+      const c2x = x2;
+      const c2y = y1 + Math.abs(deltaY) * 0.5;
+      return `M ${x1} ${y1} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${x2} ${y2}`;
     }
+  };
+
+  const cleanBlockId = (id: string) => {
+    if (!id) return "";
+    return id.replace(/^id:\s*/i, '').trim();
   };
 
   // Обработчики мыши для перемещения по холсту
@@ -618,10 +634,14 @@ export default function App() {
     // Сшиваем по связям pointer-ов
     const targetBlock = updatedBlocks[targetId];
     if (relation === "next") {
-      newBlock.nextBlockId = targetBlock.nextBlockId;
+      if (type !== 'menu_return') {
+        newBlock.nextBlockId = targetBlock.nextBlockId;
+      }
       targetBlock.nextBlockId = newId;
     } else {
-      newBlock.rightBlockId = targetBlock.rightBlockId;
+      if (type !== 'menu_return') {
+        newBlock.rightBlockId = targetBlock.rightBlockId;
+      }
       targetBlock.rightBlockId = newId;
     }
 
@@ -1102,7 +1122,7 @@ export default function App() {
         </div>
       </header>
 
-      <main className={`${adminTab === "constructor" && panelMode === "admin" ? "w-full" : "max-w-7xl mx-auto"} px-4 sm:px-6 lg:px-8 py-6`}>
+      <main className={`${adminTab === "constructor" && panelMode === "admin" ? "w-full" : "max-w-7xl mx-auto"} px-4 sm:px-6 lg:px-8 py-6 h-[calc(100vh-100px)] flex flex-col overflow-hidden`}>
 
         {/* ТОСТЕР-УВЕДОМЛЕНИЕ */}
         <AnimatePresence>
@@ -1373,7 +1393,7 @@ export default function App() {
                                       const lines: React.ReactNode[] = [];
 
                                       // Связь вниз (nextBlockId)
-                                      if (block.nextBlockId && coords[block.nextBlockId]) {
+                                      if (block.type !== 'menu_return' && block.nextBlockId && coords[block.nextBlockId]) {
                                         const np = coords[block.nextBlockId];
                                         const startX = x + cardWidth / 2;
                                         const startY = y + cardHeight;
@@ -1395,7 +1415,7 @@ export default function App() {
                                       }
 
                                       // Связь вправо (rightBlockId)
-                                      if (block.rightBlockId && coords[block.rightBlockId]) {
+                                      if (block.type !== 'menu_return' && block.rightBlockId && coords[block.rightBlockId]) {
                                         const rp = coords[block.rightBlockId];
                                         const startX = x + cardWidth;
                                         const startY = y + cardHeight / 2;
@@ -1540,7 +1560,12 @@ export default function App() {
                                         </div>
 
                                         {/* КОНТЕНТ НОДЫ */}
-                                        <div className="p-3 text-[11px] leading-snug">
+                                        <div className="p-3 text-[11px] leading-snug relative">
+                                          {block.type === 'menu_return' && (
+                                            <div className="absolute -right-2 top-2 rotate-12 opacity-10 pointer-events-none">
+                                              <Home className="w-12 h-12 text-emerald-900" />
+                                            </div>
+                                          )}
                                           {block.type === 'pause' ? (
                                             <div className="flex items-center space-x-1.5 text-purple-900 bg-purple-50/60 p-2 rounded-lg border border-purple-100 font-bold">
                                               <Clock className="w-3.5 h-3.5 text-purple-600" />
@@ -1676,6 +1701,13 @@ export default function App() {
                                   >
                                     <div className="space-y-4">
                                       {/* Локальная шапка инспектора */}
+                                      {activeBlock.type === 'menu_return' && (activeBlock.nextBlockId || activeBlock.rightBlockId) && (
+                                        <div className="hidden">
+                                          {setTimeout(() => {
+                                             handleUpdateBlockField(activeBlock.id, { nextBlockId: undefined, rightBlockId: undefined });
+                                          }, 50)}
+                                        </div>
+                                      )}
                                       <div className="flex justify-between items-center pb-2.5 border-b border-slate-100">
                                         <div>
                                           <h4 className="text-xs font-black text-slate-900 uppercase tracking-widest">Параметры блока</h4>
@@ -1759,36 +1791,42 @@ export default function App() {
                                           <div className="pt-2 border-t border-emerald-100/50">
                                             <label className="block text-[8px] font-bold text-emerald-700 uppercase mb-1.5">ID блоков для кнопок меню (Reply):</label>
                                             <div className="space-y-2">
-                                              {scenario.menuReturnSettings.buttonBlockIds.map((idVal, idx) => (
-                                                <div key={idx} className="flex items-center space-x-1">
-                                                  <input 
-                                                    type="text"
-                                                    value={idVal}
-                                                    onChange={(e) => {
-                                                      const newIds = [...scenario.menuReturnSettings!.buttonBlockIds];
-                                                      newIds[idx] = e.target.value;
-                                                      updateScenarioState({ 
-                                                        ...scenario, 
-                                                        menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
-                                                      });
-                                                    }}
-                                                    placeholder="wb_q3_b1"
-                                                    className="flex-1 text-[10px] px-2 py-1 border border-emerald-200 rounded bg-white font-mono focus:ring-1 focus:ring-emerald-400 focus:outline-none"
-                                                  />
-                                                  <button 
-                                                    onClick={() => {
-                                                      const newIds = scenario.menuReturnSettings!.buttonBlockIds.filter((_, i) => i !== idx);
-                                                      updateScenarioState({ 
-                                                        ...scenario, 
-                                                        menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
-                                                      });
-                                                    }}
-                                                    className="p-1 text-rose-400 hover:bg-rose-50 hover:text-rose-600 rounded transition-colors"
-                                                  >
-                                                    <Trash2 className="w-3 h-3" />
-                                                  </button>
-                                                </div>
-                                              ))}
+                                              {scenario.menuReturnSettings.buttonBlockIds.map((idVal, idx) => {
+                                                const isValidId = idVal === "" || scenario.blocks[idVal];
+                                                return (
+                                                  <div key={idx} className="flex items-center space-x-1">
+                                                    <div className="relative flex-1">
+                                                      <input 
+                                                        type="text"
+                                                        value={idVal}
+                                                        onChange={(e) => {
+                                                          const newIds = [...scenario.menuReturnSettings!.buttonBlockIds];
+                                                          newIds[idx] = cleanBlockId(e.target.value);
+                                                          updateScenarioState({ 
+                                                            ...scenario, 
+                                                            menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
+                                                          });
+                                                        }}
+                                                        placeholder="wb_q3_b1"
+                                                        className={`w-full text-[10px] px-2 py-1 border rounded bg-white font-mono focus:ring-1 focus:ring-emerald-400 focus:outline-none ${!isValidId ? 'border-rose-300 text-rose-600' : 'border-emerald-200 text-slate-700'}`}
+                                                      />
+                                                      {!isValidId && <span className="absolute -top-3 right-0 text-[7px] font-black text-rose-500 uppercase tracking-tighter bg-white px-1">ID не найден</span>}
+                                                    </div>
+                                                    <button 
+                                                      onClick={() => {
+                                                        const newIds = scenario.menuReturnSettings!.buttonBlockIds.filter((_, i) => i !== idx);
+                                                        updateScenarioState({ 
+                                                          ...scenario, 
+                                                          menuReturnSettings: { ...scenario.menuReturnSettings!, buttonBlockIds: newIds }
+                                                        });
+                                                      }}
+                                                      className="p-1 text-rose-400 hover:bg-rose-50 hover:text-rose-600 rounded transition-colors"
+                                                    >
+                                                      <Trash2 className="w-3 h-3" />
+                                                    </button>
+                                                  </div>
+                                                );
+                                              })}
                                               <button 
                                                 onClick={() => {
                                                   updateScenarioState({ 
