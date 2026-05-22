@@ -26,14 +26,14 @@ async function startServer() {
   let adminPasswordSalt = process.env.ADMIN_PASSWORD_SALT || "alena_default_salt";
   let adminPlaintextPassword = process.env.ADMIN_PASSWORD;
 
-  // Если в .env нет ни хэша, ни пароля, автоматически генерируем безопасный временный пароль
+  // Если в .env нет ни хэша, ни пароля, автоматически устанавливаем удобный пароль "admin" для тестирования
   if (!adminPlaintextPassword && !adminPasswordHash) {
-    adminPlaintextPassword = crypto.randomBytes(6).toString("hex"); // 12 случайных символов
+    adminPlaintextPassword = "admin"; // По умолчанию "admin"
     console.log(`\n=============================================================`);
     console.log(`⚠️  БЕЗОПАСНОСТЬ: Административный пароль не задан в .env!`);
-    console.log(`🔑 ВРЕМЕННЫЙ ПАРОЛЬ ДЛЯ ВХОДА: ${adminPlaintextPassword}`);
+    console.log(`🔑 ПАРОЛЬ ДЛЯ ВХОДА ПО УМОЛЧАНИЮ: ${adminPlaintextPassword}`);
     console.log(`👤 ИМЯ ПОЛЬЗОВАТЕЛЯ: ${adminUsername}`);
-    console.log(`💡 Пожалуйста, скопируйте этот пароль для входа в админку!`);
+    console.log(`💡 Вы можете сменить это имя и пароль в панели настроек.`);
     console.log(`=============================================================\n`);
   }
 

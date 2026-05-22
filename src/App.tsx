@@ -98,6 +98,58 @@ interface ScenarioError {
   recommendation: string;
 }
 
+interface TutorialStepDef {
+  target: string;
+  title: string;
+  desc: string;
+  placement?: "top" | "bottom";
+}
+
+const TUTORIAL_STEPS: TutorialStepDef[] = [
+  {
+    target: "tabs",
+    title: "🧭 Навигация по панели управления",
+    desc: "Админка разделена на 4 вкладки: «Конструктор» для настройки бота, «Клиенты» для просмотра базы и статистики, «Настройки» для паролей/токенов, и подробный учебник «Инструкция»."
+  },
+  {
+    target: "status",
+    title: "🟢 Статус изменений и черновик",
+    desc: "Важнейший индикатор! Зелёный цвет («Актуален с боевым») показывает, что бот работает на текущей схеме. Оранжевый («Несохраненный черновик») означает, что есть несохранённые изменения, которые пока не видны пользователям."
+  },
+  {
+    target: "backup",
+    title: "💾 Резервные копии сценария",
+    desc: "Скачивайте полную схему вашего бота в файл для резервного хранения («Скачать сценарий») или загружайте файлы сценариев («Загрузить сценарий») для быстрого копирования или восстановления."
+  },
+  {
+    target: "palette",
+    title: "➕ Кнопки добавления блоков",
+    desc: "Нажмите на круглые плюсы на линиях связи в конструкторе. Это вызовет выбор из 9 типов блоков для создания новых шагов в диалоге. С помощью стрелочек слева выделенного блока, можно перемещать его в очерёдности."
+  },
+  {
+    target: "canvas",
+    title: "🧩 Схема сценария (Miro-холст)",
+    desc: "Ваше рабочее интерактивное поле. Каждый блок — это шаг вашего бота, а стрелки — направление диалога. Зажмите левую кнопку мыши, для навигации по доске. Зум - колёсиком мыши.",
+    placement: "top"
+  },
+  {
+    target: "editor",
+    title: "⚙️ Параметры блока",
+    desc: "Эта правая панель открывается при выборе любого блока на холсте. Здесь вы настраиваете всё содержимое: пишите тексты сообщений, вводите ссылки, загружаете файлы и регулируете время пауз.",
+    placement: "top"
+  },
+  {
+    target: "validate",
+    title: "🔍 Проверка на ошибки",
+    desc: "Система автоматически проанализирует всю вашу логику на ошибки и пустоты. Запустите её принудительно, чтобы убедиться, что диалог составлен безупречно."
+  },
+  {
+    target: "publish",
+    title: "🚀 Опубликовать в бот",
+    desc: "Итоговый шаг! При нажатии бот мгновенно принимает новые правила игры и начинает работать на живом сервере по отредактированному сценарию!"
+  }
+];
+
 export default function App() {
   const [status, setStatus] = useState<BotStatus | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
@@ -116,8 +168,16 @@ export default function App() {
 
   // Режим экрана: "admin" (основная) или "developer" (патчи / логи)
   const [panelMode, setPanelMode] = useState<"admin" | "developer">("admin");
-  const [adminTab, setAdminTab] = useState<"constructor" | "settings" | "clients">("constructor");
+  const [adminTab, setAdminTab ] = useState<"constructor" | "settings" | "clients" | "instructions">("constructor");
   const [devTab, setDevTab] = useState<"status" | "logs" | "guide">("status");
+
+  // Поиск и разделы внутри интерактивной справки-инструкции
+  const [instructionSearch, setInstructionSearch] = useState("");
+  const [instructionSubTab, setInstructionSubTab] = useState<"blocks" | "logic">("blocks");
+
+  // Состояния интерактивного обучения (Tutorial)
+  const [tutorialStep, setTutorialStep] = useState<number | null>(null);
+  const [tooltipPos, setTooltipPos] = useState({ top: 0, left: 0, width: 0, height: 0, ready: false });
 
   // Состояния Конструктора Сценариев
   const [scenario, setScenario] = useState<ScenarioConfig | null>(null);
@@ -174,6 +234,53 @@ export default function App() {
     zoomRef.current = zoom;
     panRef.current = pan;
   }, [zoom, pan]);
+
+  useEffect(() => {
+    if (tutorialStep !== null) {
+      const step = TUTORIAL_STEPS[tutorialStep];
+      const target = step.target;
+
+      // Если мы на шаге редактирования параметров блока или добавления/перемещения блоков, выделим первый попавшийся фрагмент
+      if ((target === "editor" || target === "palette") && !selectedBlockId && scenario) {
+        const blockIds = Object.keys(scenario.blocks);
+        if (blockIds.length > 0) {
+          setSelectedBlockId(blockIds[0]);
+        }
+      }
+
+      const updatePos = () => {
+        const el = document.getElementById("tutorial-" + target);
+        if (el) {
+          const rect = el.getBoundingClientRect();
+          setTooltipPos({
+            top: rect.top,
+            left: rect.left,
+            width: rect.width,
+            height: rect.height,
+            ready: true
+          });
+        } else {
+          setTooltipPos({
+            top: window.innerHeight / 2 - 100,
+            left: window.innerWidth / 2 - 200,
+            width: 0,
+            height: 0,
+            ready: false
+          });
+        }
+      };
+
+      const timer = setTimeout(updatePos, 150);
+      window.addEventListener("resize", updatePos);
+      window.addEventListener("scroll", updatePos);
+
+      return () => {
+        clearTimeout(timer);
+        window.removeEventListener("resize", updatePos);
+        window.removeEventListener("scroll", updatePos);
+      };
+    }
+  }, [tutorialStep, selectedBlockId, adminTab, scenario]);
 
   // Обработка Zoom через колесико (с привязкой к центру окна конструктора по просьбе пользователя)
   useEffect(() => {
@@ -1159,7 +1266,7 @@ export default function App() {
       {/* Шапка портала */}
       <header className="sticky top-0 z-10 bg-white border-b border-slate-200/80 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between h-16 items-center">
+          <div className="flex flex-col lg:flex-row lg:h-16 py-3 lg:py-0 justify-between items-center gap-4">
             
             <div className="flex items-center space-x-3">
               <div className="p-2 bg-emerald-50 text-emerald-600 rounded-xl border border-emerald-100">
@@ -1173,30 +1280,50 @@ export default function App() {
 
             {/* Вкладки Режима Администратора */}
             {panelMode === "admin" && (
-              <div className="hidden md:flex space-x-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+              <div className="flex flex-wrap gap-1.5 items-center">
+                <div id="tutorial-tabs" className="flex flex-wrap gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  <button
+                    onClick={() => setAdminTab("constructor")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      adminTab === "constructor" ? "bg-white text-emerald-600 shadow-xs border border-slate-200" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    🧩 Конструктор
+                  </button>
+                  <button
+                    onClick={() => setAdminTab("clients")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      adminTab === "clients" ? "bg-white text-emerald-600 shadow-xs border border-slate-200" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    👥 Клиенты ({status?.sessionCount || 0})
+                  </button>
+                  <button
+                    onClick={() => setAdminTab("settings")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      adminTab === "settings" ? "bg-white text-emerald-600 shadow-xs border border-slate-200" : "text-slate-600 hover:text-slate-900"
+                    }`}
+                  >
+                    ⚙️ Настройки
+                  </button>
+                  <button
+                    onClick={() => setAdminTab("instructions")}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                      adminTab === "instructions" ? "bg-white text-emerald-600 shadow-xs border border-slate-200" : "text-slate-650 hover:text-slate-900"
+                    }`}
+                  >
+                    📖 Инструкция
+                  </button>
+                </div>
+
                 <button
-                  onClick={() => setAdminTab("constructor")}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    adminTab === "constructor" ? "bg-white text-emerald-600 shadow-xs border border-slate-200" : "text-slate-600 hover:text-slate-900"
-                  }`}
+                  onClick={() => {
+                    setAdminTab("constructor");
+                    setTimeout(() => setTutorialStep(0), 100);
+                  }}
+                  className="px-3.5 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white rounded-lg text-xs font-extrabold shadow-sm active:scale-95 hover:shadow-md transition-all flex items-center space-x-1 cursor-pointer shrink-0"
                 >
-                  🧩 Конструктор сценариев
-                </button>
-                <button
-                  onClick={() => setAdminTab("clients")}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    adminTab === "clients" ? "bg-white text-emerald-600 shadow-xs border border-slate-200" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  👥 Клиенты в боте ({status?.sessionCount || 0})
-                </button>
-                <button
-                  onClick={() => setAdminTab("settings")}
-                  className={`px-4 py-1.5 rounded-lg text-xs font-bold transition-all ${
-                    adminTab === "settings" ? "bg-white text-emerald-600 shadow-xs border border-slate-200" : "text-slate-600 hover:text-slate-900"
-                  }`}
-                >
-                  ⚙️ Настройки системы
+                  <span>🎓 Обучение</span>
                 </button>
               </div>
             )}
@@ -1252,15 +1379,18 @@ export default function App() {
                   <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
                     <div className="flex items-center space-x-3">
                       <span className="text-xs text-slate-400 font-bold uppercase tracking-wider">Инструменты конструктора:</span>
-                      {hasUnsavedChanges ? (
-                        <span className="inline-flex items-center text-[10px] bg-amber-50 text-amber-700 px-2.5 py-0.5 font-bold rounded-md border border-amber-100">
-                          <AlertCircle className="h-3 w-3 mr-1 animate-pulse" /> Несохраненный черновик
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center text-[10px] bg-emerald-50 text-emerald-700 px-2.5 py-0.5 font-bold rounded-md border border-emerald-100">
-                          <Check className="h-3 w-3 mr-1" /> Актуален с боевым
-                        </span>
-                      )}
+                      
+                      <div id="tutorial-status" className="inline-flex">
+                        {hasUnsavedChanges ? (
+                          <span className="inline-flex items-center text-[10px] bg-amber-50 text-amber-700 px-2.5 py-0.5 font-bold rounded-md border border-amber-100">
+                            <AlertCircle className="h-3 w-3 mr-1 animate-pulse" /> Несохраненный черновик
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center text-[10px] bg-emerald-50 text-emerald-700 px-2.5 py-0.5 font-bold rounded-md border border-emerald-100">
+                            <Check className="h-3 w-3 mr-1" /> Актуален с боевым
+                          </span>
+                        )}
+                      </div>
 
                       {isSavingDraft && (
                         <span className="text-[10px] text-slate-400 font-medium animate-pulse">автосохранение...</span>
@@ -1300,14 +1430,14 @@ export default function App() {
 
                       <button
                         onClick={handleValidateDraft}
-                        className="inline-flex items-center px-3 py-1.5 border border-slate-200 text-xs font-bold rounded-lg bg-white hover:bg-slate-50 text-slate-700 cursor-pointer transition-all"
+                        id="tutorial-validate" className="inline-flex items-center px-3 py-1.5 border border-slate-200 text-xs font-bold rounded-lg bg-white hover:bg-slate-50 text-slate-700 cursor-pointer transition-all"
                       >
                         🔍 Проверить черновик
                       </button>
 
                       <button
                         onClick={handleValidateDraft}
-                        className="inline-flex items-center px-4 py-1.5 border border-transparent shadow-xs text-xs font-black rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer transition-all"
+                        id="tutorial-publish" className="inline-flex items-center px-4 py-1.5 border border-transparent shadow-xs text-xs font-black rounded-lg bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer transition-all"
                       >
                         🚀 Опубликовать в бот
                       </button>
@@ -1318,21 +1448,23 @@ export default function App() {
                   <div className="flex items-center space-x-3 pt-3 border-t border-slate-100">
                     <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider mr-1">Файлы сценария:</span>
                     
-                    <button
-                      onClick={handleExportScenario}
-                      className="inline-flex items-center px-3 py-1.5 border border-slate-200 text-xs font-bold rounded-lg bg-white hover:bg-blue-50 text-blue-600 cursor-pointer transition-all"
-                    >
-                      <ArrowDown className="h-3.5 w-3.5 mr-1" />
-                      Скачать сценарий
-                    </button>
+                    <div id="tutorial-backup" className="flex items-center space-x-2.5">
+                      <button
+                        onClick={handleExportScenario}
+                        className="inline-flex items-center px-3 py-1.5 border border-slate-200 text-xs font-bold rounded-lg bg-white hover:bg-blue-50 text-blue-600 cursor-pointer transition-all"
+                      >
+                        <ArrowDown className="h-3.5 w-3.5 mr-1" />
+                        Скачать сценарий
+                      </button>
 
-                    <label
-                      htmlFor="import-scenario-input"
-                      className="inline-flex items-center px-3 py-1.5 border border-slate-200 text-xs font-bold rounded-lg bg-white hover:bg-indigo-50 text-indigo-600 cursor-pointer transition-all"
-                    >
-                      <ArrowUp className="h-3.5 w-3.5 mr-1" />
-                      Загрузить сценарий
-                    </label>
+                      <label
+                        htmlFor="import-scenario-input"
+                        className="inline-flex items-center px-3 py-1.5 border border-slate-200 text-xs font-bold rounded-lg bg-white hover:bg-indigo-50 text-indigo-600 cursor-pointer transition-all"
+                      >
+                        <ArrowUp className="h-3.5 w-3.5 mr-1" />
+                        Загрузить сценарий
+                      </label>
+                    </div>
                     <input 
                       type="file" 
                       id="import-scenario-input" 
@@ -1469,6 +1601,7 @@ export default function App() {
                               {/* ЗАБОР КАНВАСА РИСОВАНИЯ */}
                               <div 
                                 ref={canvasRef}
+                                id="tutorial-canvas"
                                 className="flex-1 bg-slate-50 relative overflow-hidden border border-slate-200 rounded-2xl select-none touch-none"
                                 style={{ cursor: isDraggingCanvas ? 'grabbing' : 'grab' }}
                                 onMouseDown={handleCanvasMouseDown}
@@ -1698,6 +1831,7 @@ export default function App() {
                                         {/* Плюс вниз (relation: next) */}
                                         {block.type !== 'menu' && (
                                           <button
+                                            id={undefined}
                                             className="absolute -bottom-3 left-1/2 -translate-x-1/2 w-6 h-6 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center border border-white shadow-md cursor-pointer hover:scale-110 active:scale-95 transition-all z-25"
                                             onClick={(e) => {
                                               e.stopPropagation();
@@ -1707,6 +1841,14 @@ export default function App() {
                                           >
                                             <Plus className="h-3 w-3" />
                                           </button>
+                                        )}
+
+                                        {/* Ghost element for Step 4 tutorial-palette highlight encompassing both left arrows and bottom plus */}
+                                        {id === Object.keys(scenario.blocks)[0] && (
+                                          <div 
+                                            id="tutorial-palette" 
+                                            className="absolute -left-12 -top-2 -right-2 -bottom-5 pointer-events-none rounded-2xl" 
+                                          />
                                         )}
 
                                         {/* Кнопки перемещения вверх/вниз для цепочки */}
@@ -1792,7 +1934,7 @@ export default function App() {
                                   <motion.div 
                                     initial={{ opacity: 0, x: 25 }}
                                     animate={{ opacity: 1, x: 0 }}
-                                    className="w-full lg:w-[320px] bg-white rounded-2xl border border-slate-200 p-4 shrink-0 flex flex-col justify-between overflow-y-auto"
+                                    id="tutorial-editor" className="w-full lg:w-[320px] bg-white rounded-2xl border border-slate-200 p-4 shrink-0 flex flex-col justify-between overflow-y-auto"
                                   >
                                     <div className="space-y-4">
                                       {/* Локальная шапка инспектора */}
@@ -2376,6 +2518,252 @@ export default function App() {
               </div>
             )}
 
+            {/* ВКЛАДКА: ИНСТРУКЦИЯ ПОЛЬЗОВАТЕЛЯ */}
+            {adminTab === "instructions" && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+                {/* Шапка руководства */}
+                <div className="px-6 py-5 border-b border-slate-200/60 bg-gradient-to-r from-emerald-500/5 to-teal-500/5 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                  <div>
+                    <h3 className="text-base font-black text-slate-900 tracking-tight flex items-center">
+                      <span className="mr-2">📖</span>
+                      База Знаний
+                    </h3>
+                    <p className="text-xs text-slate-500 mt-1 font-medium leading-normal">
+                      Руководство по работе с конструктором.
+                    </p>
+                  </div>
+                  
+                  {/* Кнопка запуска Быстрого Обучения */}
+                  <button
+                    onClick={() => {
+                      setAdminTab("constructor");
+                      setTimeout(() => setTutorialStep(0), 100);
+                    }}
+                    className="px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-500 text-white font-extrabold text-xs rounded-xl shadow-xs hover:shadow-md hover:scale-102 active:scale-98 cursor-pointer transition-all flex items-center space-x-1.5"
+                  >
+                    <span>🎯</span>
+                    <span>Пройти Обучающий Тур заново</span>
+                  </button>
+                </div>
+
+                {/* Строка поиска и фильтрации */}
+                <div className="p-4 bg-slate-50 border-b border-slate-100 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                  {/* Локальные Подвкладки */}
+                  <div className="flex bg-slate-200/70 p-1 rounded-xl border border-slate-200/50 self-start">
+                    <button
+                      onClick={() => setInstructionSubTab("blocks")}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        instructionSubTab === "blocks" ? "bg-white text-emerald-600 shadow-2xs" : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      🧩 Описание Блоков
+                    </button>
+                    <button
+                      onClick={() => setInstructionSubTab("logic")}
+                      className={`px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all ${
+                        instructionSubTab === "logic" ? "bg-white text-emerald-600 shadow-2xs" : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      🔒 Публикация и Бекапы
+                    </button>
+                  </div>
+
+                  {/* Инпут поиска */}
+                  <div className="relative w-full md:w-64">
+                    <input
+                      type="text"
+                      placeholder="Быстрый поиск по справке..."
+                      value={instructionSearch}
+                      onChange={(e) => setInstructionSearch(e.target.value)}
+                      className="w-full text-xs pl-8 pr-3.5 py-2 border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-400 focus:outline-none transition-all"
+                    />
+                    <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-xs text-slate-400">🔍</span>
+                  </div>
+                </div>
+
+                {/* Основное Тело Руководства */}
+                <div className="p-6 md:p-8 max-h-[640px] overflow-y-auto space-y-8">
+                  
+                  {/* ИНСТРУМЕНТ ПОИСКА ПЕРЕПОЛНЕНИЯ - ФИЛЬТРАЦИЯ */}
+                  {instructionSearch && (
+                    <div className="p-4 bg-emerald-50/50 border border-emerald-100/70 rounded-xl text-teal-850 text-xs font-bold mb-4">
+                      Результаты поиска по фильтру "{instructionSearch}":
+                    </div>
+                  )}
+
+                  {/* СЕКЦИЯ 2: ПОЛНЫЙ КАТАЛОГ БЛОКОВ */}
+                  {(instructionSubTab === "blocks" || (instructionSearch && "Описание Блоков".toLowerCase().includes(instructionSearch.toLowerCase()))) && (
+                    <div className="space-y-6 pt-2">
+                      <div className="border-b border-indigo-100 pb-3">
+                        <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center">
+                          <span className="mr-2 text-emerald-500">🧩</span> Секция 2. Описание всех блоков конструктора
+                        </h4>
+                        <p className="text-[11px] text-slate-400 font-bold uppercase mt-1">Что умеет каждый блок и как правильно его настраивать</p>
+                      </div>
+
+                      <div className="space-y-4">
+                        
+                        {/* Блок 1. Текстовое сообщение */}
+                        <div className="p-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs hover:border-emerald-300 transition-colors flex flex-col md:flex-row gap-4">
+                          <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center font-bold text-lg select-none">💬</div>
+                          <div className="space-y-2">
+                            <h5 className="font-extrabold text-xs text-slate-800">Текстовое сообщение</h5>
+                            <div className="text-[11px] text-slate-500 leading-relaxed space-y-1">
+                              <p>Основной текстовый блок.</p>
+                              <p>Отправляет пользователю обычное текстовое сообщение.</p>
+                              <p>К нему можно «приклеить» кнопку-ссылку, если поставить блок ссылки под ним. Можно делать жирный текст, с помощью двух звёздочек в начале и конце текста, который нужно выделить жирным. Курсив - одна звёздочка в начале и конце.</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Блок 2. Кнопка перехода или галочки-выбора */}
+                        <div className="p-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs hover:border-emerald-300 transition-colors flex flex-col md:flex-row gap-4">
+                          <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center font-bold text-lg select-none">☑️</div>
+                          <div className="space-y-2">
+                            <h5 className="font-extrabold text-xs text-slate-800">Кнопка перехода или галочки-выбора</h5>
+                            <div className="text-[11px] text-slate-500 leading-relaxed space-y-1">
+                              <p>Кнопки, которые могут ветвиться вправо, создавая отдельную ветку логики.</p>
+                              <p>Так же кнопка может не иметь ветки вправо, тогда будет просто поставлена галочка на выборе. Но после кнопок без веток вправо (после тех, у которых идёт логика вниз), нужно ставить блок ожидание нажатия кнопок.</p>
+                              <p><strong>Что делает:</strong> Создает кнопку под сообщением.</p>
+                              <p><strong>Логика:</strong> При нажатии бот может либо просто отметить пункт «галочкой», либо перебросить пользователя в другой раздел сценария(вправо).</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Блок 3. Кнопка со внешней веб-ссылкой URL */}
+                        <div className="p-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs hover:border-emerald-300 transition-colors flex flex-col md:flex-row gap-4">
+                          <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center font-bold text-lg select-none">🔗</div>
+                          <div className="space-y-2">
+                            <h5 className="font-extrabold text-xs text-slate-800">Кнопка со внешней веб-ссылкой URL</h5>
+                            <div className="text-[11px] text-slate-500 leading-relaxed space-y-1">
+                              <p>Создает кнопку, ведущую по ссылке.</p>
+                              <p>Если в блоке не указан свой текст сообщения, кнопка автоматически прикрепляется к предыдущему блоку (тексту, файлу или аудио). Но при создании блока автоматически там уже есть текст. Так что если нужно прикрепить к верхнему блоку - нужно удалить его(текст). В настройках можно настроить текст сообщения, к которому прикрепится ссылка(если не нужно прикрепить к верхнему сообщению), текст ссылки, который будет показан пользователю, вместо ссылки, сама ссылка.</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Блок 4. Таймер-пауза задержки сообщений */}
+                        <div className="p-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs hover:border-emerald-300 transition-colors flex flex-col md:flex-row gap-4">
+                          <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center font-bold text-lg select-none">⏳</div>
+                          <div className="space-y-2">
+                            <h5 className="font-extrabold text-xs text-slate-800">Таймер-пауза задержки сообщений</h5>
+                            <p className="text-[11px] text-slate-500 leading-relaxed">
+                              Делает паузу на заданное количество секунд перед отправкой следующего блока.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Блок 5. Системная кнопка «Назад» */}
+                        <div className="p-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs hover:border-emerald-300 transition-colors flex flex-col md:flex-row gap-4">
+                          <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center font-bold text-lg select-none">↩️</div>
+                          <div className="space-y-2">
+                            <h5 className="font-extrabold text-xs text-slate-800">Системная кнопка «Назад»</h5>
+                            <p className="text-[11px] text-slate-500 leading-relaxed">
+                              Позволяет вернуться к предыдущему шагу.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Блок 6. Системная «Вернуться в меню» */}
+                        <div className="p-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs hover:border-emerald-300 transition-colors flex flex-col md:flex-row gap-4">
+                          <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center font-bold text-lg select-none">🏠</div>
+                          <div className="space-y-2">
+                            <h5 className="font-extrabold text-xs text-slate-800">Системная «Вернуться в меню»</h5>
+                            <div className="text-[11px] text-slate-500 leading-relaxed space-y-1">
+                              <p>Интерактивный блок перехода в меню. Работает в два этапа. Сначала бот присылает сообщение с кнопкой «Открыть меню»(текст этого сообщения и текст кнопки в меню, устанавливается в настройках блока). После нажатия на нее отправляется сообщения главного меню и выбранные кнопки, из существующих.(сообщение главного меню устанавливается через настройки блока. Кнопки меню выбираются из существующих кнопок, так же через настройки блока.)</p>
+                              <p>Можно отдельно настроить текст сообщения перед кнопкой меню, текст самой кнопки меню и основной текст меню и выбрать кнопки для отображения. Так же, При редактировании одного блока "В меню", остальные и новые блоки "В меню", подтягивают настройки, которые вы изменили.</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Блок 7. Ожидание нажатия кнопок */}
+                        <div className="p-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs hover:border-emerald-300 transition-colors flex flex-col md:flex-row gap-4">
+                          <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center font-bold text-lg select-none">🚦</div>
+                          <div className="space-y-2">
+                            <h5 className="font-extrabold text-xs text-slate-800">Ожидание нажатия кнопок</h5>
+                            <p className="text-[11px] text-slate-500 leading-relaxed">
+                              Останавливает непрерывный вывод диалога. Бот ждет, пока клиент кликнет на любую из предложенных под сообщением кнопок. Без этого блока сообщения будут сыпаться сплошным потоком одно за другим. <strong>Важное правило:</strong> Всегда вставляйте блок «Ожидание кнопок» сразу под сообщением, к которому крепятся кнопки перехода!
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Блок 8. Добавить файл или документ */}
+                        <div className="p-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs hover:border-emerald-300 transition-colors flex flex-col md:flex-row gap-4">
+                          <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center font-bold text-lg select-none">📁</div>
+                          <div className="space-y-2">
+                            <h5 className="font-extrabold text-xs text-slate-800">Добавить файл или документ</h5>
+                            <div className="text-[11px] text-slate-500 leading-relaxed space-y-1">
+                              <p>Отправляет файлы, как документы. В настройках блока указываете ссылку на файл, и бот отправляет пользователю файл из ссылки.</p>
+                              <p>К файлу можно прикрепить кнопку-ссылку, если она стоит в сценарии снизу.</p>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Блок 9. Добавить аудиозапись / звук */}
+                        <div className="p-4 bg-white border border-slate-200/80 rounded-xl shadow-2xs hover:border-emerald-300 transition-colors flex flex-col md:flex-row gap-4">
+                          <div className="w-10 h-10 shrink-0 rounded-xl bg-slate-50 border border-slate-100 flex items-center justify-center font-bold text-lg select-none">🎵</div>
+                          <div className="space-y-2">
+                            <h5 className="font-extrabold text-xs text-slate-800">Добавить аудиозапись / звук</h5>
+                            <div className="text-[11px] text-slate-500 leading-relaxed space-y-1">
+                              <p>Голосовые сообщения или музыка.</p>
+                              <p><strong>Что делает:</strong> Отправляет аудиофайл. Настраивается так же как документ, указываете ссылку и бот отправляет аудиофайл, который по этой ссылке.</p>
+                            </div>
+                          </div>
+                        </div>
+
+                      </div>
+                    </div>
+                  )}
+
+                  {/* СЕКЦИЯ 3: ПРОДВИНУТАЯ ЛОГИКА */}
+                  {(instructionSubTab === "logic" || (instructionSearch && "Публикация и Бекапы".toLowerCase().includes(instructionSearch.toLowerCase()))) && (
+                    <div className="space-y-6 pt-2">
+                      <div className="border-b border-indigo-100 pb-3">
+                        <h4 className="text-sm font-black text-slate-900 uppercase tracking-wider flex items-center">
+                          <span className="mr-2 text-indigo-500">🔒</span> Публикация и Бэкапы
+                        </h4>
+                      </div>
+
+                      <div className="space-y-4 text-xs text-slate-650 font-medium leading-relaxed">
+                        
+                        <div className="p-5 bg-indigo-50/45 border border-indigo-100/60 rounded-2xl space-y-2">
+                          <h5 className="font-black text-[12px] text-indigo-950 flex items-center">
+                            <span>🔍</span>
+                            <span className="ml-1.5">Встроенная Авто-Валидация (Интеллектуальная проверка)</span>
+                          </h5>
+                          <p className="text-[11px] text-slate-500 text-justify">
+                            Конструктор снабжен защитой от случайных ошибок. При нажатии кнопки <strong>🔍 Проверить черновик</strong> сервер проверяет целостность всего графа связей:
+                          </p>
+                          <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] text-slate-500">
+                            <li>Обязательное присутствие текстов в текстовых сообщениях и на задействованных кнопках;</li>
+                            <li>Присутствие завершающих связей;</li>
+                            <li>Предупреждения о дублировании или неподключенных узлах.</li>
+                          </ul>
+                          <p className="text-[11px] font-bold text-slate-600 mt-1">Только при 100% корректности проверки черновика вам станет доступна кнопка публикации.</p>
+                        </div>
+
+                        <div className="p-5 bg-teal-50/45 border border-teal-100/60 rounded-2xl space-y-2">
+                          <h5 className="font-black text-[12px] text-teal-950 flex items-center">
+                            <span>📁</span>
+                            <span className="ml-1.5">Резервное копирование (Backups)</span>
+                          </h5>
+                          <p className="text-[11px] text-slate-500 text-justify">
+                            Настоятельно рекомендуется скачивать копию сценария на локальный компьютер перед внесением глобальных структурных инноваций. Для этого используйте кнопки в тулбаре:
+                          </p>
+                          <ul className="list-disc list-inside space-y-1 pl-1 text-[11px] text-slate-500">
+                            <li><strong>Скачать сценарий</strong>: Формирует один компактный зашифрованный JSON-файл со всеми вашими текстами, аудиозаписями и связями. Сохраните его на компьютере;</li>
+                            <li><strong>Загрузить сценарий</strong>: Позволяет моментально залить обратно ранее сохраненную структуру, вернув состояние квеста на любую дату истории, если что-то пошло не так.</li>
+                          </ul>
+                        </div>
+
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              </div>
+            )}
+
           </div>
         )}
 
@@ -2702,6 +3090,103 @@ WantedBy=multi-user.target`}
               </div>
             )}
 
+          </div>
+        </div>
+      )}
+
+      {/* ------------------------------------------- */}
+      {/* ИНТЕРАКТИВНОЕ ОБУЧЕНИЕ (ОБВЯЗКА ШАГ-ЗА-ШАГОМ) */}
+      {/* ------------------------------------------- */}
+      {tutorialStep !== null && (
+        <div className="fixed inset-0 z-50 pointer-events-none select-none">
+          {/* Полупрозрачная маска-затемнение с вырезом под подсвеченный элемент (spotlight) */}
+          <div 
+            className="absolute inset-0 bg-slate-950/40 transition-all duration-300 pointer-events-auto"
+            onClick={() => setTutorialStep(null)} // Закрыть по клику на фон
+          />
+
+          {/* Подсвечивающий контур (Spotlight Aura) */}
+          {tooltipPos && (tooltipPos.width !== 0 || tooltipPos.height !== 0) && (
+            <div 
+              style={{
+                position: "fixed",
+                top: tooltipPos.top - 6,
+                left: tooltipPos.left - 6,
+                width: tooltipPos.width + 12,
+                height: tooltipPos.height + 12,
+              }}
+              className="rounded-xl border-[3px] border-emerald-400 shadow-[0_0_25px_rgba(52,211,153,0.7)] bg-transparent transition-all duration-300 pointer-events-none z-50 animate-pulse"
+            />
+          )}
+
+          {/* Пузырь подсказки (Tooltip Card) */}
+          <div 
+            style={
+              tooltipPos && (tooltipPos.top !== 0 || tooltipPos.left !== 0)
+                ? (TUTORIAL_STEPS[tutorialStep].placement === "top"
+                  ? {
+                      position: "fixed",
+                      top: Math.max(16, tooltipPos.top - 12),
+                      left: Math.min(window.innerWidth - 340, Math.max(16, tooltipPos.left + (tooltipPos.width / 2) - 160)),
+                      transform: "translateY(-100%)",
+                    }
+                  : {
+                      position: "fixed",
+                      top: Math.max(16, tooltipPos.top + tooltipPos.height + 12),
+                      left: Math.min(window.innerWidth - 340, Math.max(16, tooltipPos.left + (tooltipPos.width / 2) - 160)),
+                    })
+                : {
+                    position: "fixed",
+                    top: "50%",
+                    left: "50%",
+                    transform: "translate(-50%, -50%)",
+                  }
+            }
+            className="w-[325px] bg-white text-slate-800 rounded-2xl border border-slate-200/80 p-5 shadow-[0_15px_40px_rgba(0,0,0,0.15)] pointer-events-auto transition-all duration-300 z-50"
+          >
+            <div className="flex justify-between items-center pb-2 border-b border-slate-100 mb-3">
+              <span className="text-[10px] font-black text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-100 uppercase tracking-widest">
+                Тур {tutorialStep + 1} из {TUTORIAL_STEPS.length}
+              </span>
+              <button 
+                onClick={() => setTutorialStep(null)}
+                className="text-slate-400 hover:text-slate-600 text-xs font-black transition-colors cursor-pointer"
+              >
+                ✕ Пропустить
+              </button>
+            </div>
+
+            <h4 className="text-sm font-black text-slate-900 leading-snug tracking-tight mb-1.5 flex items-center gap-1.5">
+              <span>{TUTORIAL_STEPS[tutorialStep].title}</span>
+            </h4>
+            
+            <p className="text-[11px] text-slate-500 font-medium leading-relaxed mb-4 text-justify">
+              {TUTORIAL_STEPS[tutorialStep].desc}
+            </p>
+
+            <div className="flex justify-between items-center gap-2 pt-2 border-t border-slate-100">
+              <button
+                disabled={tutorialStep <= 0}
+                onClick={() => setTutorialStep(prev => prev !== null ? prev - 1 : null)}
+                className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 rounded-lg text-xs font-bold disabled:opacity-30 cursor-pointer shadow-2xs"
+              >
+                ← Назад
+              </button>
+              
+              <button
+                onClick={() => {
+                  if (tutorialStep >= TUTORIAL_STEPS.length - 1) {
+                    setTutorialStep(null);
+                    showToast("🎓 Обучение успешно завершено! Теперь вы готовы управлять ботом.");
+                  } else {
+                    setTutorialStep(prev => prev !== null ? prev + 1 : null);
+                  }
+                }}
+                className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-black cursor-pointer shadow-sm active:scale-95 transition-all text-center"
+              >
+                {tutorialStep >= TUTORIAL_STEPS.length - 1 ? "Завершить! 🎉" : "Далее →"}
+              </button>
+            </div>
           </div>
         </div>
       )}
