@@ -6,6 +6,5 @@ coverage/
 *.log
 .env*
 !.env.example
-bloki.md
-.gitignore
 instruction.md
+bloki.md

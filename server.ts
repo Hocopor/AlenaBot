@@ -20,17 +20,31 @@ async function startServer() {
   // Хранилище сессий администратора в памяти сервера (Токен -> { username, expires })
   const activeSessions = new Map<string, { username: string; expires: number }>();
 
-  // Загружаем конфиг безопасности из переменных окружения
+  // Загружаем конфиг безопасности из переменных окружения или admin-auth.json
+  const AUTH_FILE = path.join(process.cwd(), "admin-auth.json");
   let adminUsername = process.env.ADMIN_USERNAME || "admin";
   let adminPasswordHash = process.env.ADMIN_PASSWORD_HASH;
   let adminPasswordSalt = process.env.ADMIN_PASSWORD_SALT || "alena_default_salt";
   let adminPlaintextPassword = process.env.ADMIN_PASSWORD;
 
-  // Если в .env нет ни хэша, ни пароля, автоматически устанавливаем удобный пароль "admin" для тестирования
+  if (fs.existsSync(AUTH_FILE)) {
+    try {
+      const authData = JSON.parse(fs.readFileSync(AUTH_FILE, "utf-8"));
+      if (authData.username) adminUsername = authData.username;
+      if (authData.passwordHash) adminPasswordHash = authData.passwordHash;
+      if (authData.passwordSalt) adminPasswordSalt = authData.passwordSalt;
+      adminPlaintextPassword = undefined;
+      console.log("[Auth] Loaded persistent admin settings from admin-auth.json");
+    } catch (e) {
+      console.error("[Auth] Error reading admin-auth.json:", e);
+    }
+  }
+
+  // Если в .env или admin-auth.json нет ни хэша, ни пароля, автоматически устанавливаем удобный пароль "admin" для тестирования
   if (!adminPlaintextPassword && !adminPasswordHash) {
     adminPlaintextPassword = "admin"; // По умолчанию "admin"
     console.log(`\n=============================================================`);
-    console.log(`⚠️  БЕЗОПАСНОСТЬ: Административный пароль не задан в .env!`);
+    console.log(`⚠️  БЕЗОПАСНОСТЬ: Административный пароль не задан!`);
     console.log(`🔑 ПАРОЛЬ ДЛЯ ВХОДА ПО УМОЛЧАНИЮ: ${adminPlaintextPassword}`);
     console.log(`👤 ИМЯ ПОЛЬЗОВАТЕЛЯ: ${adminUsername}`);
     console.log(`💡 Вы можете сменить это имя и пароль в панели настроек.`);
@@ -367,16 +381,20 @@ async function startServer() {
   });
 
   // API: Смена глобальных настроек (пароли, контакты и т.д.)
-  app.post("/api/settings", checkAuth, (req, res) => {
+  app.post("/api/settings", checkAuth, async (req, res) => {
     try {
       const { newPassword, contactLink, telegramBotToken } = req.body;
       const currentLive = scenarioManager.loadConfig();
+      let botTokenChanged = false;
 
       if (contactLink) {
         currentLive.contactLink = contactLink;
         botConfig.contactLink = contactLink;
       }
       if (telegramBotToken) {
+        if (currentLive.telegramBotToken !== telegramBotToken) {
+          botTokenChanged = true;
+        }
         currentLive.telegramBotToken = telegramBotToken;
         process.env.TELEGRAM_BOT_TOKEN = telegramBotToken;
       }
@@ -388,46 +406,30 @@ async function startServer() {
         const salt = crypto.randomBytes(16).toString("hex");
         const hash = hashPassword(newPassword, salt);
 
-        // Прописываем новые значения хеша в `.env`
+        // Пишем новые значения в персистентный файл авторизации (не триггерит перезапуск dev-сервера)
         try {
-          const envPath = path.join(process.cwd(), ".env");
-          let envContent = "";
-          if (fs.existsSync(envPath)) {
-            envContent = fs.readFileSync(envPath, "utf-8");
-          }
-
-          const lines = envContent.split("\n");
-          const updatedLines = [];
-          let hashFound = false;
-          let saltFound = false;
-
-          for (let line of lines) {
-            const trimL = line.trim();
-            if (trimL.startsWith("ADMIN_PASSWORD_HASH")) {
-              updatedLines.push(`ADMIN_PASSWORD_HASH="${hash}"`);
-              hashFound = true;
-            } else if (trimL.startsWith("ADMIN_PASSWORD_SALT")) {
-              updatedLines.push(`ADMIN_PASSWORD_SALT="${salt}"`);
-              saltFound = true;
-            } else if (trimL.startsWith("ADMIN_PASSWORD=")) {
-              // Игнорируем исходный открытый пароль в пользу хеша
-            } else {
-              updatedLines.push(line);
-            }
-          }
-
-          if (!hashFound) updatedLines.push(`ADMIN_PASSWORD_HASH="${hash}"`);
-          if (!saltFound) updatedLines.push(`ADMIN_PASSWORD_SALT="${salt}"`);
-
-          fs.writeFileSync(envPath, updatedLines.join("\n"), "utf-8");
+          const authData = {
+            username: adminUsername,
+            passwordHash: hash,
+            passwordSalt: salt
+          };
+          fs.writeFileSync(AUTH_FILE, JSON.stringify(authData, null, 2), "utf-8");
 
           // Обновляем текущие переменные в памяти сервера
           adminPasswordHash = hash;
           adminPasswordSalt = salt;
           adminPlaintextPassword = undefined;
-        } catch (envErr) {
-          console.error("Failed to write password hash to .env: ", envErr);
+          console.log("[Settings] Password hash successfully saved to admin-auth.json.");
+        } catch (authErr) {
+          console.error("Failed to write password hash to admin-auth.json: ", authErr);
         }
+      }
+
+      // Если обновился токен, автоматически перезапускаем бота на новом токене на лету!
+      if (botTokenChanged && telegramBotToken) {
+        console.log("[Settings] Telegram Bot Token changed! Relaunching telegramBotService...");
+        const reloadRes = await telegramBotService.start();
+        console.log(`[Settings] Bot relaunch completed. Success: ${reloadRes.success}, Mode: ${reloadRes.mode}`);
       }
 
       res.json({ success: true });

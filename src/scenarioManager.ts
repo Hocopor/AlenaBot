@@ -793,7 +793,7 @@ export class ScenarioManager {
     const errors: ScenarioError[] = [];
 
     // Проверяем токен
-    if (config.telegramBotToken && !/^\d+:[A-Za-z0-9_-]{35}$/.test(config.telegramBotToken.trim())) {
+    if (config.telegramBotToken && !/^\d+:[A-Za-z0-9_-]+$/.test(config.telegramBotToken.trim())) {
       errors.push({
         message: "Некорректный формат Telegram-токена бота.",
         recommendation: "Telegram Bot Token должен соответствовать стандартному виду, например: 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ."
