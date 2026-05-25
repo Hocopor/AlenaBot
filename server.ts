@@ -76,11 +76,9 @@ async function startServer() {
   // Telegram API отправляет обновления в формате JSON, поэтому нам обязательно нужен парсер
   app.use(express.json());
 
-  // Разрешаем загрузку файлов во временную папку
+  // Разрешаем загрузку файлов в оперативную память для надежности на Cloud Run
   app.use(fileUpload({
-    limits: { fileSize: 50 * 1024 * 1024 }, // 50MB
-    useTempFiles: true,
-    tempFileDir: "/tmp/"
+    limits: { fileSize: 50 * 1024 * 1024 } // 50MB
   }));
 
   // Раздача статических медиафайлов/документов, загруженных админами
