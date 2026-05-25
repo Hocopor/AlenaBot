@@ -151,6 +151,32 @@ async function startServer() {
     }
   });
 
+  // API: Удаление медиафайла с сервера при смене настроек или удалении блока (Защищено)
+  app.post("/api/delete-file", checkAuth, (req, res) => {
+    try {
+      const { url } = req.body;
+      if (!url) {
+        return res.status(400).json({ error: "Ссылка на файл не передана." });
+      }
+
+      if (typeof url === "string" && url.startsWith("/uploads/")) {
+        const fileName = path.basename(url);
+        if (fileName && fileName !== "." && fileName !== "..") {
+          const filePath = path.join(process.cwd(), "uploads", fileName);
+          if (fs.existsSync(filePath)) {
+            fs.unlinkSync(filePath);
+            console.log(`[Upload] File deleted successfully: ${filePath}`);
+            return res.json({ success: true, message: `Файл ${fileName} удален с сервера.` });
+          }
+        }
+      }
+      return res.json({ success: false, message: "Файл не найден на сервере или не является локальным." });
+    } catch (e: any) {
+      console.error("[Delete File] Exception during file deletion:", e);
+      res.status(500).json({ error: e.message || "Ошибка при удалении файла с сервера." });
+    }
+  });
+
   // API: Авторизация (Login - возвращает временный токен сессии)
   app.post("/api/login", (req, res) => {
     const { username, password } = req.body;
@@ -385,11 +411,15 @@ async function startServer() {
     try {
       const { newPassword, contactLink, telegramBotToken } = req.body;
       const currentLive = scenarioManager.loadConfig();
+      const currentDraft = scenarioManager.loadDraft();
       let botTokenChanged = false;
 
       if (contactLink) {
         currentLive.contactLink = contactLink;
         botConfig.contactLink = contactLink;
+        if (currentDraft) {
+          currentDraft.contactLink = contactLink;
+        }
       }
       if (telegramBotToken) {
         if (currentLive.telegramBotToken !== telegramBotToken) {
@@ -397,9 +427,15 @@ async function startServer() {
         }
         currentLive.telegramBotToken = telegramBotToken;
         process.env.TELEGRAM_BOT_TOKEN = telegramBotToken;
+        if (currentDraft) {
+          currentDraft.telegramBotToken = telegramBotToken;
+        }
       }
 
       scenarioManager.saveConfig(currentLive);
+      if (currentDraft) {
+        scenarioManager.saveDraft(currentDraft);
+      }
 
       // Смена пароля администратора
       if (newPassword) {
