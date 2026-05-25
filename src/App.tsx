@@ -75,6 +75,10 @@ interface ScenarioBlock {
   menuGateButtonText?: string;
   linkButtonText?: string;
   menuAttachedBlocks?: string[];
+  urlType?: "url" | "upload" | "";
+  linkUrl?: string;
+  uploadedUrl?: string;
+  uploadedName?: string;
 }
 
 interface ScenarioMenuButton {
@@ -1014,6 +1018,27 @@ export default function App() {
     const currentBlock = updatedBlocks[blockId];
     if (!currentBlock) return;
 
+    // СИНХРОНИЗАЦИЯ/ВЫЧИСЛЕНИЯ ДЛЯ БЛОКОВ МЕДИА И ФАЙЛОВ
+    const blockType = fields.type || currentBlock.type;
+    if (blockType === "file" || blockType === "audio") {
+      const urlType = fields.urlType !== undefined ? fields.urlType : (currentBlock.urlType || (currentBlock.url && currentBlock.url.startsWith("/uploads/") ? "upload" : "url"));
+      const linkUrl = fields.linkUrl !== undefined ? fields.linkUrl : (currentBlock.linkUrl !== undefined ? currentBlock.linkUrl : (urlType === "url" ? (currentBlock.url || "") : ""));
+      const uploadedUrl = fields.uploadedUrl !== undefined ? fields.uploadedUrl : (currentBlock.uploadedUrl !== undefined ? currentBlock.uploadedUrl : (urlType === "upload" ? (currentBlock.url || "") : ""));
+      const uploadedName = fields.uploadedName !== undefined ? fields.uploadedName : (currentBlock.uploadedName !== undefined ? currentBlock.uploadedName : (urlType === "upload" ? (currentBlock.text || "") : ""));
+
+      fields.urlType = urlType;
+      fields.linkUrl = linkUrl;
+      fields.uploadedUrl = uploadedUrl;
+      fields.uploadedName = uploadedName;
+
+      if (urlType === "url") {
+        fields.url = linkUrl;
+      } else {
+        fields.url = uploadedUrl;
+        fields.text = uploadedName;
+      }
+    }
+
     // СИНХРОНИЗАЦИЯ: Если это блок типа "menu", либо меняется тип на "menu"
     const isMenuTarget = fields.type === 'menu' || (currentBlock.type === 'menu' && !fields.type);
 
@@ -1083,7 +1108,8 @@ export default function App() {
       }
 
       // Если в блоке уже есть локальный загруженный файл — сначала удаляем его с сервера
-      if (activeBlock.url && activeBlock.url.startsWith("/uploads/")) {
+      const fileUrl = activeBlock.uploadedUrl || (activeBlock.url && activeBlock.url.startsWith("/uploads/") ? activeBlock.url : "");
+      if (fileUrl) {
         try {
           await fetch("/api/delete-file", {
             method: "POST",
@@ -1091,7 +1117,7 @@ export default function App() {
               "Content-Type": "application/json",
               "Authorization": `Bearer ${authToken}`
             },
-            body: JSON.stringify({ url: activeBlock.url })
+            body: JSON.stringify({ url: fileUrl })
           });
         } catch (delErr) {
           console.error("Failed to delete older file:", delErr);
@@ -1135,10 +1161,7 @@ export default function App() {
                   [blockId]: { ...current, progress: 100, success: true }
                 };
               });
-              handleUpdateBlockField(blockId, { url: result.url });
-              if (!activeBlock.text) {
-                handleUpdateBlockField(blockId, { text: result.name });
-              }
+              handleUpdateBlockField(blockId, { uploadedUrl: result.url, uploadedName: result.name });
               showToast("Файл успешно загружен!");
             } else {
               const errMsg = result.error || "Неизвестная ошибка загрузки";
@@ -1185,9 +1208,11 @@ export default function App() {
   // Удаление файла через настройки блока
   const handleRemoveUploadedFile = async (blockId: string) => {
     const b = scenario?.blocks?.[blockId];
-    if (!b || !b.url) return;
+    if (!b) return;
 
-    if (b.url.startsWith("/uploads/")) {
+    const fileUrl = b.uploadedUrl || (b.url && b.url.startsWith("/uploads/") ? b.url : "");
+
+    if (fileUrl && fileUrl.startsWith("/uploads/")) {
       try {
         await fetch("/api/delete-file", {
           method: "POST",
@@ -1195,7 +1220,7 @@ export default function App() {
             "Content-Type": "application/json",
             "Authorization": `Bearer ${authToken}`
           },
-          body: JSON.stringify({ url: b.url })
+          body: JSON.stringify({ url: fileUrl })
         });
         showToast("Файл удален с сервера.");
       } catch (e) {
@@ -1203,7 +1228,7 @@ export default function App() {
       }
     }
 
-    handleUpdateBlockField(blockId, { url: "", text: "" });
+    handleUpdateBlockField(blockId, { uploadedUrl: "", uploadedName: "" });
 
     // Сбрасываем стейт прогресса загрузки
     setUploadProgress(prev => {
@@ -1214,25 +1239,8 @@ export default function App() {
   };
 
   // Переключение источника файлов (ссылка или uploaded)
-  const handleSwitchFileSource = async (blockId: string, newType: "url" | "upload") => {
-    const currentBlock = scenario?.blocks?.[blockId];
-    if (!currentBlock) return;
-
-    const isCurrentUpload = currentBlock.url && currentBlock.url.startsWith("/uploads/");
-
-    if (newType === "url" && isCurrentUpload) {
-      if (window.confirm("При переключении на ссылку ранее загруженный с ПК файл будет безвозвратно удален с сервера. Продолжить?")) {
-        await handleRemoveUploadedFile(blockId);
-      }
-    } else {
-      // Если переключаемся на upload или просто стираем внешнюю ссылку
-      handleUpdateBlockField(blockId, { url: "", text: "" });
-      setUploadProgress(prev => {
-        const copy = { ...prev };
-        delete copy[blockId];
-        return copy;
-      });
-    }
+  const handleSwitchFileSource = (blockId: string, newType: "url" | "upload") => {
+    handleUpdateBlockField(blockId, { urlType: newType });
   };
 
   // ДОБАВЛЕНИЕ НОВОЙ КНОПКИ В ГЛАВНОЕ МЕНЮ
@@ -2086,6 +2094,10 @@ export default function App() {
                               {/* БОКОВАЯ FIGMA-ПАНЕЛЬ НАСТРОЕК ВЫДЕЛЕННОГО БЛОКА */}
                               {selectedBlockId && scenario.blocks[selectedBlockId] ? (() => {
                                 const activeBlock = scenario.blocks[selectedBlockId];
+                                const activeUrlType = activeBlock.urlType || (activeBlock.url && activeBlock.url.startsWith("/uploads/") ? "upload" : "url");
+                                const activeLinkUrl = activeBlock.linkUrl !== undefined ? activeBlock.linkUrl : (activeUrlType === "url" ? (activeBlock.url || "") : "");
+                                const activeUploadedUrl = activeBlock.uploadedUrl !== undefined ? activeBlock.uploadedUrl : (activeUrlType === "upload" ? (activeBlock.url || "") : "");
+                                const activeUploadedName = activeBlock.uploadedName !== undefined ? activeBlock.uploadedName : (activeUrlType === "upload" ? (activeBlock.text || "") : "");
                                 return (
                                   <motion.div 
                                     initial={{ opacity: 0, x: 25 }}
@@ -2340,7 +2352,7 @@ export default function App() {
                                                 type="button"
                                                 onClick={() => handleSwitchFileSource(activeBlock.id, "url")}
                                                 className={`flex-1 py-1 text-[10.5px] font-bold text-center border-b-2 transition-all duration-150 ${
-                                                  !(activeBlock.url && activeBlock.url.startsWith("/uploads/"))
+                                                  activeUrlType === "url"
                                                     ? "border-indigo-500 text-indigo-600"
                                                     : "border-transparent text-slate-400 hover:text-slate-600"
                                                 }`}
@@ -2351,7 +2363,7 @@ export default function App() {
                                                 type="button"
                                                 onClick={() => handleSwitchFileSource(activeBlock.id, "upload")}
                                                 className={`flex-1 py-1 text-[10.5px] font-bold text-center border-b-2 transition-all duration-150 ${
-                                                  (activeBlock.url && activeBlock.url.startsWith("/uploads/"))
+                                                  activeUrlType === "upload"
                                                     ? "border-emerald-500 text-emerald-600"
                                                     : "border-transparent text-slate-400 hover:text-slate-600"
                                                 }`}
@@ -2361,28 +2373,38 @@ export default function App() {
                                             </div>
                                           )}
 
-                                          {activeBlock.type === "link" || !(activeBlock.url && activeBlock.url.startsWith("/uploads/")) ? (
+                                          {/* Вкладка ссылка: отображается ДЛЯ КНОПОК LINK или ЕСЛИ активна вкладка url */}
+                                          {(activeBlock.type === "link" || activeUrlType === "url") && (
                                             <div className="space-y-1">
                                               <label className="block text-[9px] font-black text-slate-400 uppercase tracking-widest">
-                                                {activeBlock.type === "link" ? "Веб-ссылка перехода (URL):" : "Ссылка или путь к файлу:"}
+                                                {activeBlock.type === "link" ? "Веб-ссылка перехода (URL):" : "Ссылка:"}
                                               </label>
                                               <input
                                                 type="text"
                                                 placeholder={activeBlock.type === "link" ? "https://" : "https://example.com/file.mp3 или /uploads/file"}
-                                                value={activeBlock.url || ""}
-                                                onChange={(e) => handleUpdateBlockField(activeBlock.id, { url: e.target.value })}
+                                                value={activeBlock.type === "link" ? (activeBlock.url || "") : activeLinkUrl}
+                                                onChange={(e) => {
+                                                  if (activeBlock.type === "link") {
+                                                    handleUpdateBlockField(activeBlock.id, { url: e.target.value });
+                                                  } else {
+                                                    handleUpdateBlockField(activeBlock.id, { linkUrl: e.target.value });
+                                                  }
+                                                }}
                                                 className="w-full text-[11px] px-2.5 py-1.5 border border-slate-200 bg-white rounded-lg font-mono text-indigo-650 focus:outline-none focus:ring-1 focus:ring-indigo-400"
                                               />
                                             </div>
-                                          ) : (
+                                          )}
+
+                                          {/* Вкладка загрузка: отображается ТОЛЬКО ЕСЛИ тип file/audio и активна вкладка upload */}
+                                          {(activeBlock.type === "file" || activeBlock.type === "audio") && activeUrlType === "upload" && (
                                             <div className="space-y-2">
-                                              {activeBlock.url && activeBlock.url.startsWith("/uploads/") ? (
+                                              {activeUploadedUrl && activeUploadedUrl.startsWith("/uploads/") ? (
                                                 <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-2.5 flex items-center justify-between">
                                                   <div className="flex items-center space-x-2 overflow-hidden truncate">
                                                     <span className="text-emerald-600 text-sm">✅</span>
                                                     <div className="overflow-hidden">
-                                                      <p className="text-[10px] font-bold text-slate-700 truncate">
-                                                        {activeBlock.text || activeBlock.url.split("/").pop()}
+                                                      <p className="text-[10px] font-bold text-slate-700 truncate border-transparent">
+                                                        {activeUploadedName || activeUploadedUrl.split("/").pop()}
                                                       </p>
                                                       <p className="text-[8px] text-emerald-600 font-mono italic">
                                                         Файл сохранен на сервере
@@ -2392,115 +2414,107 @@ export default function App() {
                                                   <button
                                                     type="button"
                                                     onClick={() => handleRemoveUploadedFile(activeBlock.id)}
-                                                    className="text-slate-400 hover:text-red-650 hover:bg-red-50 p-1.5 rounded-lg transition-colors text-xs text-rose-500 hover:text-rose-700"
+                                                    className="hover:bg-red-50 p-1.5 rounded-lg transition-colors text-xs text-rose-500 hover:text-rose-700"
                                                     title="Удалить файл с сервера"
                                                   >
                                                     🗑️
                                                   </button>
                                                 </div>
-                                              ) : null}
-                                            </div>
-                                          )}
-
-                                          {(activeBlock.type === "file" || activeBlock.type === "audio") && !(activeBlock.url && activeBlock.url.startsWith("/uploads/")) && (
-                                            <div className="pt-1 text-[8.5px] text-slate-400 text-center">
-                                              Используйте ручной ввод ссылки или переключите вкладку для прямой загрузки с диска
-                                            </div>
-                                          )}
-
-                                          {(activeBlock.type === "file" || activeBlock.type === "audio") && !activeBlock.url && (
-                                            <div className="pt-1.5 border-t border-slate-100">
-                                              {uploadProgress[activeBlock.id] ? (
-                                                <div className="bg-white border border-slate-200 rounded-xl p-2.5 space-y-2">
-                                                  <div className="flex justify-between items-center text-[10px] text-slate-650">
-                                                    <span className="font-bold truncate max-w-[70%]">
-                                                      {uploadProgress[activeBlock.id].fileName}
-                                                    </span>
-                                                    <span>
-                                                      {uploadProgress[activeBlock.id].success ? (
-                                                        <span className="text-emerald-600 font-extrabold flex items-center space-x-0.5">
-                                                          <span>Готово</span> <span>✅</span>
-                                                        </span>
-                                                      ) : uploadProgress[activeBlock.id].error ? (
-                                                        <span className="text-red-500 font-semibold">Ошибка ❌</span>
-                                                      ) : (
-                                                        <span className="text-indigo-600 font-mono font-bold">
-                                                          {uploadProgress[activeBlock.id].progress}%
-                                                        </span>
-                                                      )}
-                                                    </span>
-                                                  </div>
-                                                  
-                                                  <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
-                                                    <div
-                                                      className={`h-full transition-all duration-300 ${
-                                                        uploadProgress[activeBlock.id].error 
-                                                          ? "bg-red-500" 
-                                                          : uploadProgress[activeBlock.id].success 
-                                                            ? "bg-emerald-500" 
-                                                            : "bg-indigo-500"
-                                                      }`}
-                                                      style={{ width: `${uploadProgress[activeBlock.id].progress}%` }}
-                                                    />
-                                                  </div>
-                                                  
-                                                  {uploadProgress[activeBlock.id].error && (
-                                                    <p className="text-[9px] text-red-500 font-medium">
-                                                      {uploadProgress[activeBlock.id].error}
-                                                    </p>
-                                                  )}
-
-                                                  {(uploadProgress[activeBlock.id].success || uploadProgress[activeBlock.id].error) && (
-                                                    <button
-                                                      type="button"
-                                                      onClick={() => {
-                                                        setUploadProgress(prev => {
-                                                          const copy = { ...prev };
-                                                          delete copy[activeBlock.id];
-                                                          return copy;
-                                                        });
-                                                      }}
-                                                      className="text-[9.5px] text-indigo-500 hover:text-indigo-700 underline font-extrabold cursor-pointer animate-pulse"
-                                                    >
-                                                      Сбросить и выбрать заново
-                                                    </button>
-                                                  )}
-                                                </div>
                                               ) : (
-                                                <div
-                                                  onDragOver={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                  }}
-                                                  onDrop={(e) => {
-                                                    e.preventDefault();
-                                                    e.stopPropagation();
-                                                    const file = e.dataTransfer.files?.[0];
-                                                    if (file) {
-                                                      handleFileUploadAsync(file, activeBlock.id);
-                                                    }
-                                                  }}
-                                                >
-                                                  <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 hover:border-emerald-400 bg-white hover:bg-emerald-50/20 rounded-xl p-3.5 transition-all cursor-pointer select-none">
-                                                    <input
-                                                      type="file"
-                                                      accept={activeBlock.type === "audio" ? "audio/*" : "*/*"}
-                                                      className="hidden"
-                                                      onChange={(e) => {
-                                                        const file = e.target.files?.[0];
+                                                <div>
+                                                  {uploadProgress[activeBlock.id] ? (
+                                                    <div className="bg-white border border-slate-200 rounded-xl p-2.5 space-y-2">
+                                                      <div className="flex justify-between items-center text-[10px] text-slate-650">
+                                                        <span className="font-bold truncate max-w-[70%] border-transparent">
+                                                          {uploadProgress[activeBlock.id].fileName}
+                                                        </span>
+                                                        <span>
+                                                          {uploadProgress[activeBlock.id].success ? (
+                                                            <span className="text-emerald-600 font-extrabold flex items-center space-x-0.5">
+                                                              <span>Готово</span> <span>✅</span>
+                                                            </span>
+                                                          ) : uploadProgress[activeBlock.id].error ? (
+                                                            <span className="text-red-500 font-semibold">Ошибка ❌</span>
+                                                          ) : (
+                                                            <span className="text-indigo-600 font-mono font-bold">
+                                                              {uploadProgress[activeBlock.id].progress}%
+                                                            </span>
+                                                          )}
+                                                        </span>
+                                                      </div>
+                                                      
+                                                      <div className="w-full bg-slate-100 h-1.5 rounded-full overflow-hidden">
+                                                        <div
+                                                          className={`h-full transition-all duration-300 ${
+                                                            uploadProgress[activeBlock.id].error 
+                                                              ? "bg-red-500" 
+                                                              : uploadProgress[activeBlock.id].success 
+                                                                ? "bg-emerald-500" 
+                                                                : "bg-indigo-500"
+                                                          }`}
+                                                          style={{ width: `${uploadProgress[activeBlock.id].progress}%` }}
+                                                        />
+                                                      </div>
+                                                      
+                                                      {uploadProgress[activeBlock.id].error && (
+                                                        <p className="text-[9px] text-red-500 font-medium">
+                                                          {uploadProgress[activeBlock.id].error}
+                                                        </p>
+                                                      )}
+
+                                                      {(uploadProgress[activeBlock.id].success || uploadProgress[activeBlock.id].error) && (
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => {
+                                                            setUploadProgress(prev => {
+                                                              const copy = { ...prev };
+                                                              delete copy[activeBlock.id];
+                                                              return copy;
+                                                            });
+                                                          }}
+                                                          className="text-[9.5px] text-indigo-500 hover:text-indigo-700 underline font-extrabold cursor-pointer animate-pulse"
+                                                        >
+                                                          Сбросить и выбрать заново
+                                                        </button>
+                                                      )}
+                                                    </div>
+                                                  ) : (
+                                                    <div
+                                                      onDragOver={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                      }}
+                                                      onDrop={(e) => {
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+                                                        const file = e.dataTransfer.files?.[0];
                                                         if (file) {
                                                           handleFileUploadAsync(file, activeBlock.id);
                                                         }
                                                       }}
-                                                    />
-                                                    <span className="text-xl mb-1">📤</span>
-                                                    <span className="text-[10px] font-bold text-slate-700">
-                                                      Выбрать и загрузить файл...
-                                                    </span>
-                                                    <span className="text-[8px] text-slate-400 mt-0.5 text-center">
-                                                      Перетащите файл сюда (Drag & Drop) или кликните для выбора
-                                                    </span>
-                                                  </label>
+                                                    >
+                                                      <label className="flex flex-col items-center justify-center border-2 border-dashed border-slate-200 hover:border-emerald-400 bg-white hover:bg-emerald-50/20 rounded-xl p-3.5 transition-all cursor-pointer select-none">
+                                                        <input
+                                                          type="file"
+                                                          accept={activeBlock.type === "audio" ? "audio/*" : "*/*"}
+                                                          className="hidden"
+                                                          onChange={(e) => {
+                                                            const file = e.target.files?.[0];
+                                                            if (file) {
+                                                              handleFileUploadAsync(file, activeBlock.id);
+                                                            }
+                                                          }}
+                                                        />
+                                                        <span className="text-xl mb-1">📤</span>
+                                                        <span className="text-[10px] font-bold text-slate-700">
+                                                          Выбрать и загрузить файл...
+                                                        </span>
+                                                        <span className="text-[8px] text-slate-400 mt-0.5 text-center">
+                                                          Перетащите файл сюда (Drag & Drop) или кликните для выбора
+                                                        </span>
+                                                      </label>
+                                                    </div>
+                                                  )}
                                                 </div>
                                               )}
                                             </div>

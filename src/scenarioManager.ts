@@ -17,6 +17,10 @@ export interface ScenarioBlock {
   menuGateButtonText?: string;
   linkButtonText?: string;
   menuAttachedBlocks?: string[];
+  urlType?: "url" | "upload" | "";
+  linkUrl?: string;
+  uploadedUrl?: string;
+  uploadedName?: string;
 }
 
 export interface ScenarioMenuButton {
