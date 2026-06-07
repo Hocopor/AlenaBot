@@ -355,7 +355,7 @@ export class TelegramBotService {
               const nextToExec = attachedLink ? attachedLink.nextBlockId : block.nextBlockId;
               if (nextToExec) await this.executeBlock(ctx, nextToExec, userId);
             } catch (err: any) {
-              console.error(`[Bot] File send error (block ${blockId}):`, err?.message || err);
+              console.error(`[Bot] File send error (block ${blockId}, url=${block.url}):`, err?.description || err?.message || err);
               await ctx.reply(`[Ошибка отправки файла]`);
               if (block.nextBlockId) await this.executeBlock(ctx, block.nextBlockId, userId);
             }
@@ -390,7 +390,7 @@ export class TelegramBotService {
               const nextToExec = attachedLink ? attachedLink.nextBlockId : block.nextBlockId;
               if (nextToExec) await this.executeBlock(ctx, nextToExec, userId);
             } catch (err: any) {
-              console.error(`[Bot] Audio send error (block ${blockId}):`, err?.message || err);
+              console.error(`[Bot] Audio send error (block ${blockId}, url=${block.url}):`, err?.description || err?.message || err);
               await ctx.reply(`[Ошибка отправки аудио]`);
               if (block.nextBlockId) await this.executeBlock(ctx, block.nextBlockId, userId);
             }

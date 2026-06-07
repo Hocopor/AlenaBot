@@ -121,13 +121,16 @@ async function startServer() {
       const uploadedFile = req.files[fileKey];
       const file = Array.isArray(uploadedFile) ? uploadedFile[0] : uploadedFile;
 
+      // express-fileupload отдает имя в latin1, перекодируем в UTF-8, чтобы кириллица не превращалась в кракозябры
+      const originalName = Buffer.from(file.name, "latin1").toString("utf8");
+
       const uploadDir = path.join(process.cwd(), "uploads");
       if (!fs.existsSync(uploadDir)) {
         fs.mkdirSync(uploadDir, { recursive: true });
       }
 
       // Генерация уникального случайного имени
-      const rawExt = path.extname(file.name);
+      const rawExt = path.extname(originalName);
       const randomName = crypto.randomBytes(16).toString("hex") + rawExt;
       const destPath = path.join(uploadDir, randomName);
 
@@ -140,7 +143,7 @@ async function startServer() {
         res.json({
           success: true,
           url: `/uploads/${randomName}`,
-          name: file.name
+          name: originalName
         });
       });
     } catch (e: any) {
