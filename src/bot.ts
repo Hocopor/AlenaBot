@@ -32,7 +32,13 @@ function buildSocksProxyAgent(): SocksProxyAgent | null {
     return null;
   }
 
-  return new SocksProxyAgent(proxyUrl);
+  // keepAlive — переиспользуем установленный SOCKS-туннель для последовательных
+  // запросов (меньше хендшейков, меньше одновременных коннектов к прокси).
+  // timeout — даём прокси больше времени на установку соединения под нагрузкой.
+  return new SocksProxyAgent(proxyUrl, {
+    keepAlive: true,
+    timeout: 30000
+  });
 }
 
 export class TelegramBotService {
