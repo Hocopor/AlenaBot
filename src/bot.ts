@@ -1,9 +1,38 @@
 import { Bot, InlineKeyboard, Keyboard, Context, InputFile } from "grammy";
+import { SocksProxyAgent } from "socks-proxy-agent";
 import fs from "fs";
 import path from "path";
 import { botConfig } from "./botConfig";
 import { sessionManager, UserSession } from "./botSession";
 import { scenarioManager, ScenarioBlock } from "./scenarioManager";
+
+/**
+ * Собирает SOCKS5 прокси-агент из переменных окружения.
+ * Поддерживается либо готовый URL в PROXY_URL, либо отдельные поля
+ * PROXY_HOST/PROXY_PORT (+ опционально PROXY_USERNAME/PROXY_PASSWORD).
+ * Если прокси не настроен — возвращает null, и бот работает напрямую.
+ */
+function buildSocksProxyAgent(): SocksProxyAgent | null {
+  const directUrl = process.env.PROXY_URL?.trim();
+  const host = process.env.PROXY_HOST?.trim();
+  const port = process.env.PROXY_PORT?.trim();
+
+  let proxyUrl: string | undefined;
+
+  if (directUrl) {
+    // Если схема не указана, форсируем socks5
+    proxyUrl = /^socks[45]?:\/\//i.test(directUrl) ? directUrl : `socks5://${directUrl}`;
+  } else if (host && port) {
+    const user = process.env.PROXY_USERNAME?.trim();
+    const pass = process.env.PROXY_PASSWORD?.trim();
+    const auth = user ? `${encodeURIComponent(user)}:${encodeURIComponent(pass || "")}@` : "";
+    proxyUrl = `socks5://${auth}${host}:${port}`;
+  } else {
+    return null;
+  }
+
+  return new SocksProxyAgent(proxyUrl);
+}
 
 export class TelegramBotService {
   private bot: Bot | null = null;
@@ -69,7 +98,21 @@ export class TelegramBotService {
     }
 
     try {
-      this.bot = new Bot(token);
+      const proxyAgent = buildSocksProxyAgent();
+      if (proxyAgent) {
+        this.addLog(`SOCKS5 proxy enabled for Telegram API traffic (${proxyAgent.proxy.host}:${proxyAgent.proxy.port}).`);
+      } else {
+        this.addLog("No proxy configured — connecting to Telegram API directly.");
+      }
+
+      this.bot = new Bot(token, proxyAgent ? {
+        client: {
+          baseFetchConfig: {
+            agent: proxyAgent,
+            compress: true
+          }
+        }
+      } : undefined);
       await this.bot.init(); // Инициализируем botInfo внутри grammY, чтобы вебхуки работали без ошибок
       this.setupHandlers();
       this.addLog("Bot handlers configured successfully.");
