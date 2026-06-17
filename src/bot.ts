@@ -20,13 +20,14 @@ function buildSocksProxyAgent(): SocksProxyAgent | null {
   let proxyUrl: string | undefined;
 
   if (directUrl) {
-    // Если схема не указана, форсируем socks5
-    proxyUrl = /^socks[45]?:\/\//i.test(directUrl) ? directUrl : `socks5://${directUrl}`;
+    // Если схема не указана, форсируем socks5h (DNS резолвится на стороне прокси —
+    // критично для окружений, где имя api.telegram.org заблокировано локально, напр. РФ).
+    proxyUrl = /^socks[45]?[ha]?:\/\//i.test(directUrl) ? directUrl : `socks5h://${directUrl}`;
   } else if (host && port) {
     const user = process.env.PROXY_USERNAME?.trim();
     const pass = process.env.PROXY_PASSWORD?.trim();
     const auth = user ? `${encodeURIComponent(user)}:${encodeURIComponent(pass || "")}@` : "";
-    proxyUrl = `socks5://${auth}${host}:${port}`;
+    proxyUrl = `socks5h://${auth}${host}:${port}`;
   } else {
     return null;
   }
