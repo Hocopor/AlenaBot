@@ -15,7 +15,7 @@ dotenv.config();
 
 async function startServer() {
   const app = express();
-  const PORT = 3000;
+  const PORT = Number(process.env.PORT) || 3555;
 
   // Хранилище сессий администратора в памяти сервера (Токен -> { username, expires })
   const activeSessions = new Map<string, { username: string; expires: number }>();
